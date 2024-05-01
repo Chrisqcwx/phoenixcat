@@ -3,7 +3,7 @@ import inspect
 import functools
 import torch
 
-from .io import safe_save
+from ...pyutils.io import safe_save_json
 
 
 class ConfigMixin:
@@ -45,10 +45,8 @@ class ConfigMixin:
         self._config_mixin_dict = config_dict
 
     def save_config(self, save_path: str):
-        os.makedirs(save_path, exist_ok=True)
-        safe_save(
-            self.preprocess_config_before_save(self._config_mixin_dict), save_path
-        )
+        config = self.preprocess_config_before_save(self._config_mixin_dict)
+        safe_save_json(config, save_path)
 
     @staticmethod
     def load_config(config_path: str):
