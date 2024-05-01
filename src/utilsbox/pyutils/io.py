@@ -6,6 +6,7 @@ from collections import OrderedDict
 
 
 import pandas as pd
+from .format import format_as_yaml
 
 
 def get_safe_save_path(save_dir: str, save_name: Optional[str] = None):
@@ -47,44 +48,7 @@ def walk_imgs(path):
     return img_paths
 
 
-yaml.add_representer(
-    OrderedDict,
-    lambda dumper, data: dumper.represent_mapping(
-        'tag:yaml.org,2002:map', data.items()
-    ),
-)
-yaml.add_representer(
-    tuple, lambda dumper, data: dumper.represent_sequence('tag:yaml.org,2002:seq', data)
-)
-
-
-def obj_to_yaml(obj) -> str:
-    return yaml.dump(obj)
-
-
-def print_split_line(content=None, length=60):
-    """Print the content and surround it with '-' character for alignment.
-
-    Args:
-        content (_type_, optional): The content to print. Defaults to None.
-        length (int, optional): The total length of content and '-' characters. Defaults to 60.
-    """
-
-    if content is None:
-        print('-' * length)
-        return
-    if len(content) > length - 4:
-        length = len(content) + 4
-
-    total_num = length - len(content) - 2
-    left_num = total_num // 2
-    right_num = total_num - left_num
-    print('-' * left_num, end=' ')
-    print(content, end=' ')
-    print('-' * right_num)
-
-
-def safe_save_yaml(obj, save_dir: str, save_name: Optional[str] = None):
+def safe_save_as_yaml(obj, save_dir: str, save_name: Optional[str] = None):
     """Save the data in yaml format.
 
     Args:
@@ -93,7 +57,7 @@ def safe_save_yaml(obj, save_dir: str, save_name: Optional[str] = None):
         save_name (Optional[str], optional): The file name for the data to save. Defaults to None.
     """
 
-    s = yaml.dump(obj)
+    s = format_as_yaml(obj)
     save_path = get_safe_save_path(save_dir, save_name)
     with open(save_path, 'w') as f:
         f.write(s)
@@ -128,7 +92,7 @@ def safe_save_csv(df: pd.DataFrame, save_dir: str, save_name: Optional[str] = No
     df.to_csv(save_path, index=None)
 
 
-def safe_save_json(obj, save_dir: str, save_name: Optional[str] = None):
+def safe_save_as_json(obj, save_dir: str, save_name: Optional[str] = None):
     """Save the data in json format.
 
     Args:
