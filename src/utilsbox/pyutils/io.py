@@ -1,7 +1,7 @@
 import os
 import yaml
 import json
-from typing import Optional
+from typing import Optional, Tuple
 from collections import OrderedDict
 
 
@@ -30,7 +30,7 @@ IMG_EXTENSIONS = (
 )
 
 
-def walk_imgs(path):
+def walk_extension_files(path: str, extension: str | Tuple[str]):
     """Traverse all images in the specified path.
 
     Args:
@@ -43,9 +43,13 @@ def walk_imgs(path):
     img_paths = []
     for root, dirs, files in os.walk(path):
         for file in files:
-            if file.endswith(IMG_EXTENSIONS):
+            if file.endswith(extension):
                 img_paths.append(os.path.join(root, file))
     return img_paths
+
+
+def walk_images(path: str):
+    return walk_extension_files(path, suffix=IMG_EXTENSIONS)
 
 
 def safe_save_as_yaml(obj, save_dir: str, save_name: Optional[str] = None):

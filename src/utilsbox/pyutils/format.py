@@ -1,10 +1,11 @@
 import time
 import yaml
 import json
+from typing import Optional
 from collections import OrderedDict
 
 
-def print_split_line(content=None, length=60):
+def print_split_line(content: Optional[str] = None, length: int = 60):
     """Print the content and surround it with '-' character for alignment.
 
     Args:
@@ -26,7 +27,7 @@ def print_split_line(content=None, length=60):
     print('-' * right_num)
 
 
-def format_number(num: int, base=1000):
+def format_number(num: int, base: int = 1000):
     assert num >= 0
 
     for suffix in ['', 'k', 'M', 'G']:
