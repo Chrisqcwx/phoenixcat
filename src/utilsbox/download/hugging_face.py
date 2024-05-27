@@ -13,4 +13,5 @@ def set_huggingface_mirror(url=None):
 
     url = "https://hf-mirror.com" if url is None else url
     os.environ["HF_ENDPOINT"] = url
+    logger.info(f"The `huggingface_hub` mirror is set to '{url}'")
     import huggingface_hub

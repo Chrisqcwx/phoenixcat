@@ -1,0 +1,1 @@
+from .get_object import get_obj_from_str
