@@ -1,4 +1,5 @@
 import copy
+from typing import Literal
 from collections import defaultdict, OrderedDict
 
 try:
@@ -9,14 +10,14 @@ except:
     _has_torch = False
 
 
-class Accumulator:
+class ListAccumulator:
     """For accumulating sums over `n` variables."""
 
-    def __init__(self, n):
+    def __init__(self, n: int):
         self.data = [0] * n
         self.num = 0
 
-    def add(self, *args, add_num=1, add_type='mean'):
+    def add(self, *args, add_num: int = 1, add_type: Literal['mean', 'sum'] = 'mean'):
         """adding data to the data list"""
         assert len(args) == len(self.data)
         mul_coef = add_num if add_type == 'mean' else 1
@@ -63,7 +64,9 @@ class DictAccumulator:
         self.data = OrderedDict()  # defaultdict(lambda : 0)
         self.num = 0
 
-    def add(self, add_dic: OrderedDict, add_num=1, add_type='mean'):
+    def add(
+        self, add_dic: OrderedDict, add_num=1, add_type: Literal['mean', 'sum'] = 'mean'
+    ):
         mul_coef = add_num if add_type == 'mean' else 1
         self.num += add_num
         for key, val in add_dic.items():

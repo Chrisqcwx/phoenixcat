@@ -1,6 +1,7 @@
 from typing import Union, Optional
 
 import torch
+import numpy as np
 
 
 class ShapeException(Exception):
@@ -8,7 +9,7 @@ class ShapeException(Exception):
 
 
 def check_shape(
-    tensor: torch.Tensor,
+    tensor: torch.Tensor | np.ndarray,
     expect_shape: Union[list[Optional[int]], list[Optional[int]]],
     raise_exception=True,
 ) -> bool:
@@ -21,8 +22,8 @@ def check_shape(
 
     Returns:
         bool: The check result.
-    """    
-    
+    """
+
     tensor_shape = tensor.shape
 
     if len(tensor_shape) < len(expect_shape):
