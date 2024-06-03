@@ -52,7 +52,7 @@ def download_one_dir_from_huggingface(
                 logger.info(f"File {file_name} already exists, skipping download.")
                 continue
             download_file(
-                f"{root_url}/{repo_type}/{repo_id}/tree/main/{item.get('path')}",
+                f"{root_url}/{repo_type}/{repo_id}/resolve/main/{item.get('path')}?download=true",
                 file_name,
                 mkdirs,
                 chunk_size=chunk_size,
@@ -73,6 +73,27 @@ def download_from_huggingface(
     chunk_size: int = 8192,
     continue_download: bool = True
 ):
+    """Downloads a dataset or model from Hugging Face, with options to use either a direct URL or a repository ID. 
+    The function supports downloading from a mirror site to potentially increase download speeds.
+
+    Args:
+        url (str, optional): Direct URL to the dataset or model. If specified, overrides `repo_id`. Defaults to None.
+        repo_id (str, optional): Repository identifier in the format 'author/reponame'. Used if `url` is not specified. 
+            Defaults to None.
+        repo_type (str, optional): Type of the repository ('datasets' or 'models'). Required if `repo_id` is used. 
+            Defaults to None.
+        use_mirror (bool, optional): Whether to download from a mirror site. Defaults to True.
+        local_path (os.PathLike, optional): Local filesystem path where the repository should be saved. 
+            Defaults to ".download".
+        retry (int, optional): Number of retry attempts in case of failures. Defaults to 20.
+        wait (float, optional): Wait time in seconds between retries. Defaults to 5.0.
+        chunk_size (int, optional): Size of chunks to download at a time in bytes. Defaults to 8192.
+        continue_download (bool, optional): If True, will continue an existing download. 
+            If False, will overwrite existing files. Defaults to True.
+
+    Raises:
+        ValueError: If both `url` and `repo_id` are provided, or other required parameters are missing.
+    """
     if not only_one_given(url, repo_id):
         logger.error(f"Both `url` and `repo_id` are passed in.")
         raise ValueError(f"Both `url` and `repo_id` are passed in.")

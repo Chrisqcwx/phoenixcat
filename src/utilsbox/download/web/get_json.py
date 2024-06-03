@@ -8,13 +8,26 @@ logger = logging.getLogger(__name__)
 
 
 def get_json(
-    url,
+    url: str,
     local_file: os.PathLike = None,
     mkdirs: bool = True,
     retry: int = 10,
     wait: float = 2.0
 ):
-    
+    """Fetch JSON data from a given URL.
+
+    Args:
+        url (str): The URL from which to download the JSON data.
+        local_file (os.PathLike, optional): Path to the file where the downloaded JSON data should be saved.
+            If None, the data is not saved to a file. Defaults to None.
+        mkdirs (bool, optional): If True, creates the directory path for the local_file if it does not already exist.
+            Defaults to True.
+        retry (int, optional): Number of retry attempts to download the data in case of failure. Defaults to 10.
+        wait (float, optional): Time in seconds to wait between retry attempts. Defaults to 2.0 seconds.
+
+    Returns:
+        dict: A dictionary containing the JSON data if the download was successful. None if not successful.
+    """
     for i in range(retry):
         try:
             response = requests.get(url)
