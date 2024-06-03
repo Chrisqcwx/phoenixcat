@@ -1,10 +1,21 @@
+import logging
 from typing import Optional
+from collections import OrderedDict
+
+logger = logging.getLogger(__name__)
+
+_BUILDIN_REGISTERS = {}
 
 
 class Register(dict):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, name: str, *args, **kwargs):
         super(Register, self).__init__(*args, **kwargs)
         self._dict = {}
+
+        if name in _BUILDIN_REGISTERS:
+            raise RuntimeError(f'The register {name} is already exist')
+        logger.info(f'Create register {name}')
+        _BUILDIN_REGISTERS[name] = self
 
     def register(self, name: Optional[str] = None):
 
@@ -40,3 +51,13 @@ class Register(dict):
 
     def items(self):
         return self._dict.items()
+
+
+def list_registers():
+    return list(_BUILDIN_REGISTERS.keys())
+
+
+def get_register(name: str):
+    if name in _BUILDIN_REGISTERS:
+        return _BUILDIN_REGISTERS[name]
+    return Register(name)

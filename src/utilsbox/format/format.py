@@ -1,48 +1,44 @@
 import time
 import yaml
 import json
+import logging
 from typing import Optional
 from collections import OrderedDict
 
+logger = logging.getLogger(__name__)
 
-def print_split_line(content: Optional[str] = None, length: int = 60):
-    """Print the content and surround it with '-' character for alignment.
 
-    Args:
-        content (_type_, optional): The content to print. Defaults to None.
-        length (int, optional): The total length of content and '-' characters. Defaults to 60.
-    """
-
+def format_as_split_line(content: Optional[str] = None, length: int = 60) -> str:
     if content is None:
-        print('-' * length)
-        return
+        return '-' * length
     if len(content) > length - 4:
+        logger.info('The length of content is larger than the specified length.')
         length = len(content) + 4
 
     total_num = length - len(content) - 2
     left_num = total_num // 2
     right_num = total_num - left_num
-    print('-' * left_num, end=' ')
-    print(content, end=' ')
-    print('-' * right_num)
+    return '-' * left_num + f' {content} ' + '_' * right_num
 
 
 def format_number(num: int, base: int = 1000):
-    assert num >= 0
+    prefix = ''
+    if num < 0:
+        prefix = '-'
+        num = -num
 
     for suffix in ['', 'k', 'M', 'G']:
         if num < base:
             return f'{num:.4f} {suffix}'
         num /= base
 
-    return f'{num:.4f} T'
+    return f'{prefix}{num:.4f} T'
 
 
-def format_now_time(as_filename: bool = False):
-    if as_filename:
-        return time.strftime('%Y%m%d %H%M%S', time.localtime(time.time()))
-    else:
-        return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
+def format_time(time_time: Optional[float] = None, pattern: str = '%Y%m%d-%H%M%S'):
+    if time_time is None:
+        time_time = time.time()
+    return time.strftime(pattern, time.localtime(time_time))
 
 
 yaml.add_representer(
@@ -58,3 +54,7 @@ yaml.add_representer(
 
 def format_as_yaml(obj) -> str:
     return yaml.dump(obj)
+
+
+def format_as_json(obj) -> str:
+    return json.dumps(obj)
