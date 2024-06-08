@@ -6,10 +6,8 @@ import os
 from dataclasses import dataclass
 from typing import Dict
 
-import accelerate
 import torch
 from diffusers.configuration_utils import ConfigMixin, register_to_config
-import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
 
 from . import constant
@@ -80,42 +78,91 @@ class TrainingConfig:
     
 
 @dataclass
-class TrainingOutputFilesManager:
-    logging_file: str | os.PathLike = "training.log"
-    tensorboard_dir: str | os.PathLike = "tensorboard"
-    wandb_dir: str | os.PathLike = "wandb"
-    checkpoints_dir: str | os.PathLike = "checkpoints"
-
-@dataclass
 class TrainingFlag:
-    step: int = 0
-    epoch: int = 0
+    distributed_training: bool
+    device_id: int
     
-@dataclass
-class TrainingDatasetManager:
-    training_dataset: torch.utils.data.Dataset = None
-    validation_dataset: torch.utils.data.Dataset = None
-    training_dataloader: torch.utils.data.DataLoader = None
-    validation_dataloader: torch.utils.data.DataLoader = None
+    @property
+    def is_main_process(self) -> bool:
+        if self.distributed_training:
+            return self.device_id == 0
+        else:
+            return True
     
 
+
+# TODO: 请测试
 class TrainerMixin(abc.ABC, ConfigMixin):
     
     config_name = "config.json"
-    output_files_manager = TrainingOutputFilesManager()
+    logger_name = "training.log"
+    tensorboard_subfolder = "tensorboard"
+    checkpoints_subfolder = "checkpoints"
+    last_training_status_subfolder = "last"
+    
+    ignore_for_config = ["_reload"]
     
     @register_to_config
     def __init__(
         self,
-        output_dir: str | os.PathLike,
-        seed: int = 0,
+        output_dir_config: dict,
+        training_config: dict,
+        seed: int,
+        distributed_training: bool,
+        device_id: int,
+        *,
+        _reload: bool = False,
+        _output_path: os.PathLike = None,
     ) -> None:
         super().__init__()
+        self.training_flag = TrainingFlag(distributed_training, device_id)
+        self.is_main_process = self.training_flag.is_main_process
+        if self.is_main_process:
+            self._set_output_dir(**output_dir_config, _reload=_reload, _output_path=_output_path)
         self._set_seed(seed)
-        self.output_dir = output_dir
-        self.flag = TrainingFlag()
-        self.dataset_manager = TrainingDatasetManager()
-        self.register_accelerator(None)
+        self._set_training_config(**training_config)
+        
+        self.current_epoch = 0
+        self.current_step = 0
+        self.training_dataset = None
+        self.training_dataloader = None
+        
+    
+    def _set_output_dir(
+        self,
+        root: os.PathLike = ".outputs",
+        name: os.PathLike = None,
+        use_timestamp: bool = True,
+        logger_config: Dict[str, str] = None,
+        *,
+        _reload: bool = False,
+        _output_path: os.PathLike = None
+    ):
+        if _reload:
+            self.output_dir = _output_path
+        else:
+            if name is None:
+                path = root
+            else:
+                path = os.path.join(root, name)
+            
+            if use_timestamp:
+                now = datetime.datetime.now().strftime("%Y-%m-%d,%H:%M:%S,%f")[:-3]
+                path = os.path.join(path, now)
+            
+            os.makedirs(path, exist_ok=True)
+            self.output_dir = path
+        
+        init_logger(
+            file_name=os.path.join(self.output_dir, self.logger_name),
+            **logger_config
+        )
+        
+        os.makedirs(os.path.join(self.output_dir, self.tensorboard_subfolder), exist_ok=True)
+        self.writer = SummaryWriter(os.path.join(self.output_dir, self.tensorboard_subfolder))
+        
+        self.save_config(save_directory=self.output_dir, push_to_hub=False)
+    
     
     def _set_seed(
         self,
@@ -123,25 +170,13 @@ class TrainerMixin(abc.ABC, ConfigMixin):
     ):
         self.seed = seed
         seed_every_thing(seed)
+        
     
     def _set_training_config(
         self,
         training_config: Dict
     ):
         self.training_config = TrainingConfig(**training_config)
-        
-    def register_accelerator(self, accelerator: accelerate.Accelerator):
-        self.accelerator = accelerator
-        
-    @property
-    def is_local_main_process(self) -> bool:
-        if self.accelerator is None:
-            return True
-        return self.accelerator.is_local_main_process
-    
-    def wait_for_everyone(self):
-        if self.accelerator is not None:
-            self.accelerator.wait_for_everyone()
     
     @abc.abstractmethod
     def auto_init(self, reload: bool = False):
@@ -175,49 +210,35 @@ class TrainerMixin(abc.ABC, ConfigMixin):
     def auto_load_status(self, checkpoint_path):
         raise NotImplementedError("Please implement the `auto_load_status` method.")
     
-    @torch.no_grad()
-    def _save_checkpoint(self):
-        if self.is_local_main_process:
-            self.wait_for_everyone()
-            self.auto_save_checkpoint()
-    
-    @torch.no_grad()        
-    def _save_training_status(self):
-        if self.is_local_main_process:
-            self.wait_for_everyone()
-            self.auto_save_training_status()
-    
-    @torch.no_grad()
-    def _validation(self):
-        self.wait_for_everyone()
-        self.auto_validation()
-    
-    @torch.no_grad()
-    def _watching(self):
-        if self.is_local_main_process:
-            self.wait_for_everyone()
-            self.auto_watching()
-    
     @classmethod
-    def from_yaml_config(cls, config_path: os.PathLike):
+    def from_yaml_config(cls, config_path: os.PathLike, _reload: bool = False):
         import yaml
         with open(config_path, "r") as config_file:
             config = yaml.safe_load(config_file)
+            if _reload:
+                config["_reload"] = _reload
+                config["_output_path"] = os.path.dirname(config_path)
         return cls.from_config(config)
     
     @classmethod
-    def from_json_config(cls, config_path: os.PathLike):
+    def from_json_config(cls, config_path: os.PathLike, _reload: bool = False):
         import json
         with open(config_path, "r") as config_file:
             config = json.load(config_file)
+            if _reload:
+                config["_reload"] = _reload
+                config["_output_path"] = os.path.dirname(config_path)
         return cls.from_config(config)
     
     @classmethod
-    def from_ini_config(cls, config_path: os.PathLike):
+    def from_ini_config(cls, config_path: os.PathLike, _reload: bool = False):
         import configparser
         config = configparser.ConfigParser()
         config.read(config_path)
         config = {section: dict(config.items(section)) for section in config.sections()}
+        if _reload:
+                config["_reload"] = _reload
+                config["_output_path"] = os.path.dirname(config_path)
         return cls.from_config(config)
     
     @classmethod
@@ -225,6 +246,7 @@ class TrainerMixin(abc.ABC, ConfigMixin):
         cls, 
         config_path: os.PathLike = None, 
         config_module: str = None,
+        _reload: bool = False
     ):
         # TODO: 完善从 py 文件读取配置文件的功能.
         # TODO: 太恶心了 我写不动 谁爱用这个功能谁写.
@@ -238,33 +260,33 @@ class TrainerMixin(abc.ABC, ConfigMixin):
             pass
     
     @classmethod
-    def from_config_file(cls, config_path: os.PathLike):
+    def from_config_file(cls, config_path: os.PathLike, *, _reload: bool = False):
         from pathlib import Path
         extension = Path(config_path).suffix.lower()
         if extension in constant.ConfigSuffix.json:
-            return cls.from_json_config(config_path)
+            return cls.from_json_config(config_path, _reload=_reload)
         if extension in constant.ConfigSuffix.yaml:
-            return cls.from_yaml_config(config_path)
+            return cls.from_yaml_config(config_path, _reload=_reload)
         if extension in constant.ConfigSuffix.ini:
-            return cls.from_ini_config(config_path)
+            return cls.from_ini_config(config_path, _reload=_reload)
         raise NotImplementedError(f"Unknown suffix '{extension}' in path '{config_path}'.")
             
     @classmethod
     def from_output_dir(cls, dir_path: os.PathLike):
         config_path = os.path.join(dir_path, cls.config_name)
-        self = cls.from_config_file(config_path)
+        self = cls.from_config_file(config_path, _reload=True)
         self.auto_load_status()
         
-        logger.info(f"Warm up for epoch={self.flag.epoch} and step={self.flag.step}.")
-        if self.flag.step == 0 and self.flag.epoch == 0:
+        logger.info(f"Warm up for epoch={self.current_epoch} and step={self.current_step}.")
+        if self.current_step == 0 and self.current_epoch == 0:
             return self
         _step = 0
         _epoch = 0
         while True:
-            for _ in self.dataset_manager.training_dataloader:
+            for _ in self.training_dataloader:
                 _step += 1
-                if _step == self.flag.step:
-                    if _epoch == self.flag.epoch:
+                if _step == self.current_step:
+                    if _epoch == self.current_epoch:
                         return self
                     else:
                         raise RuntimeError("`current_epoch` and `current_step` mismatch.")
@@ -276,28 +298,29 @@ def register_to_run_one_epoch(one_epoch_func: function, only_training: bool = Fa
     @functools.wraps(one_epoch_func)
     def run_one_epoch(self: TrainerMixin, *args, **kwargs):
         result = one_epoch_func(*args, **kwargs)
-        self.flag.epoch += 1
+        self.current_epoch += 1
         
         if only_training:
             return result
         
         self.auto_set_to_eval_mode()
         
-        if self.training_config.checkpointing_epoches is not None:
-            if self.flag.epoch % self.training_config.checkpointing_epoches == 0:
-                self._save_checkpoint()
-        
-        if self.training_config.saving_epoches is not None:
-            if self.flag.epoch % self.training_config.saving_epoches == 0:
-                self._save_training_status()
-        
-        if self.training_config.validation_epoches is not None:
-            if self.flag.epoch % self.training_config.validation_epoches == 0:
-                self._validation()
+        with torch.no_grad():
+            if self.training_config.checkpointing_epoches is not None:
+                if self.current_epoch % self.training_config.checkpointing_epoches == 0:
+                    self.auto_save_checkpoint()
             
-        if self.training_config.watching_epoches is not None:
-            if self.flag.epoch % self.training_config.watching_epoches == 0:
-                self._watching()
+            if self.training_config.saving_epoches is not None:
+                if self.current_epoch % self.training_config.saving_epoches == 0:
+                    self.auto_save_training_status()
+            
+            if self.training_config.validation_epoches is not None:
+                if self.current_epoch % self.training_config.validation_epoches == 0:
+                    self.auto_validation()
+                
+            if self.training_config.watching_epoches is not None:
+                if self.current_epoch % self.training_config.watching_epoches == 0:
+                    self.auto_watching()
         
         self.auto_set_to_train_mode()
         
@@ -311,28 +334,29 @@ def register_to_run_one_iteration(one_iteration_func: function, only_training: b
     @functools.wraps(one_iteration_func)
     def run_one_iteration(self: TrainerMixin, *args, **kwargs):
         result = one_iteration_func(*args, **kwargs)
-        self.flag.step += 1
+        self.current_step += 1
         
         if only_training:
             return result
         
         self.auto_set_to_eval_mode()
-                
-        if self.training_config.checkpointing_steps is not None:
-            if self.flag.step % self.training_config.checkpointing_steps == 0:
-                self._save_checkpoint()
         
-        if self.training_config.saving_steps is not None:
-            if self.flag.step% self.training_config.saving_steps == 0:
-                self._save_training_status()
-        
-        if self.training_config.validation_steps is not None:
-            if self.flag.step % self.training_config.validation_steps == 0:
-                self._validation()
+        with torch.no_grad():
+            if self.training_config.checkpointing_steps is not None:
+                if self.current_step % self.training_config.checkpointing_steps == 0:
+                    self.auto_save_checkpoint()
             
-        if self.training_config.watching_steps is not None:
-            if self.flag.step % self.training_config.watching_steps == 0:
-                self._watching()
+            if self.training_config.saving_steps is not None:
+                if self.current_step % self.training_config.saving_steps == 0:
+                    self.auto_save_training_status()
+            
+            if self.training_config.validation_steps is not None:
+                if self.current_step % self.training_config.validation_steps == 0:
+                    self.auto_validation()
+                
+            if self.training_config.watching_steps is not None:
+                if self.current_step % self.training_config.watching_steps == 0:
+                    self.auto_watching()
         
         self.auto_set_to_train_mode()
         
