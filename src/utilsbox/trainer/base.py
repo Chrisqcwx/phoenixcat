@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Dict
 
 import accelerate
+# from accelerate.logging import get_logger
 import torch
 from diffusers.configuration_utils import ConfigMixin, register_to_config
 import torch.utils.data
