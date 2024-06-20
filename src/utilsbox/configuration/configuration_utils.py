@@ -1,5 +1,10 @@
-from ..decorators import Register
+import logging
+
 from diffusers.configuration_utils import ConfigMixin as HF_ConfigMixin
+
+from ..decorators import Register
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigMixin(HF_ConfigMixin):
@@ -20,5 +25,7 @@ def auto_cls_from_pretrained(register: Register, path: str, **kwargs):
         cls = register[cls_name]
     except:
         raise RuntimeError(f'_class_name `{cls_name}` has not been registered.')
+
+    logging.debug(f'Create instance for `{cls_name}`')
 
     return cls.from_pretrained(path, **kwargs)
