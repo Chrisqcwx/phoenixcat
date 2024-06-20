@@ -10,15 +10,29 @@ import accelerate
 
 # from accelerate.logging import get_logger
 import torch
-from diffusers.configuration_utils import ConfigMixin, register_to_config
 import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
 
 from . import constant
 from ..logger.logging import init_logger
 from ..random._seeds import seed_every_thing
+from ..decorators import Register
+from ..configuration import ConfigMixin, auto_cls_from_pretrained
 
 logger = logging.getLogger(__name__)
+
+
+_trainer_register = Register('trainer')
+
+register_trainer = _trainer_register.register()
+
+
+def list_trainers():
+    return list(_trainer_register.keys())
+
+
+def get_trainer_builder(name: str):
+    return _trainer_register[name]
 
 
 class TrainingConfig:
@@ -377,3 +391,8 @@ def register_to_run_one_iteration(
         return result
 
     return run_one_iteration
+
+
+def auto_trainer_from_pretrained(path: str, **kwargs):
+
+    return auto_cls_from_pretrained(_trainer_register, path, **kwargs)
