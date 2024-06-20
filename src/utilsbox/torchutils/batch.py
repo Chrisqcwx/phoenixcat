@@ -1,9 +1,10 @@
+import logging
 from typing import Callable, Optional
 
 import torch
 from tqdm import tqdm
 
-from ..pyutils.io import print_split_line
+from ..format.format import format_as_split_line
 
 
 def _is_namedtuple(obj):
@@ -83,13 +84,13 @@ def batch_apply(
 
     if use_tqdm:
         if description is not None:
-            print_split_line(description)
+            print(format_as_split_line(description))
         starts = tqdm(starts, leave=False)
 
     for i, start in enumerate(starts, start=1):
 
         if description is not None and not use_tqdm:
-            print_split_line(f'{description}: {i} / {iter_times}')
+            print(format_as_split_line(f'{description}: {i} / {iter_times}'))
 
         end = min(total_len, start + batch_size)
         res = fn(*[p[start:end] for p in inputs], **other_input_kwargs)
