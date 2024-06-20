@@ -11,9 +11,14 @@ class ConfigMixin(HF_ConfigMixin):
     pass
 
 
-def auto_cls_from_pretrained(register: Register, path: str, **kwargs):
+def auto_cls_from_pretrained(
+    register: Register, mixin_class: type, path: str, **kwargs
+):
 
-    config = ConfigMixin.load_config(path)
+    if not hasattr(mixin_class, 'load_config'):
+        raise RuntimeError(f'Class `{mixin_class}` do not has attribute `load_config`.')
+
+    config = mixin_class.load_config(path)
     if isinstance(config, tuple):
         config = config[0]
 

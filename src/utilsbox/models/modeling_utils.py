@@ -540,4 +540,4 @@ class ModelMixin(HF_ModelMixin, ConfigMixin):
 
 def auto_model_from_pretrained(path: str, **kwargs):
 
-    return auto_cls_from_pretrained(_model_register, path, **kwargs)
+    return auto_cls_from_pretrained(_model_register, ModelMixin, path, **kwargs)

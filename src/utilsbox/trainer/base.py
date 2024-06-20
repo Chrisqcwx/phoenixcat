@@ -395,4 +395,4 @@ def register_to_run_one_iteration(
 
 def auto_trainer_from_pretrained(path: str, **kwargs):
 
-    return auto_cls_from_pretrained(_trainer_register, path, **kwargs)
+    return auto_cls_from_pretrained(_trainer_register, TrainerMixin, path, **kwargs)
