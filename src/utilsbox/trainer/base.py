@@ -321,76 +321,82 @@ class TrainerMixin(abc.ABC, ConfigMixin):
             _epoch += 1
 
 
-def register_to_run_one_epoch(one_epoch_func: function, only_training: bool = False):
+def register_to_run_one_epoch(only_training: bool = False):
 
-    @functools.wraps(one_epoch_func)
-    def run_one_epoch(self: TrainerMixin, *args, **kwargs):
-        result = one_epoch_func(*args, **kwargs)
-        self.flag.epoch += 1
+    def one_epoch_func_decorator(one_epoch_func: function):
 
-        if only_training:
+        @functools.wraps(one_epoch_func)
+        def run_one_epoch(self: TrainerMixin, *args, **kwargs):
+            result = one_epoch_func(*args, **kwargs)
+            self.flag.epoch += 1
+
+            if only_training:
+                return result
+
+            self.auto_set_to_eval_mode()
+
+            if self.training_config.checkpointing_epoches is not None:
+                if self.flag.epoch % self.training_config.checkpointing_epoches == 0:
+                    self._save_checkpoint()
+
+            if self.training_config.saving_epoches is not None:
+                if self.flag.epoch % self.training_config.saving_epoches == 0:
+                    self._save_training_status()
+
+            if self.training_config.validation_epoches is not None:
+                if self.flag.epoch % self.training_config.validation_epoches == 0:
+                    self._validation()
+
+            if self.training_config.watching_epoches is not None:
+                if self.flag.epoch % self.training_config.watching_epoches == 0:
+                    self._watching()
+
+            self.auto_set_to_train_mode()
+
             return result
 
-        self.auto_set_to_eval_mode()
+        return run_one_epoch
 
-        if self.training_config.checkpointing_epoches is not None:
-            if self.flag.epoch % self.training_config.checkpointing_epoches == 0:
-                self._save_checkpoint()
-
-        if self.training_config.saving_epoches is not None:
-            if self.flag.epoch % self.training_config.saving_epoches == 0:
-                self._save_training_status()
-
-        if self.training_config.validation_epoches is not None:
-            if self.flag.epoch % self.training_config.validation_epoches == 0:
-                self._validation()
-
-        if self.training_config.watching_epoches is not None:
-            if self.flag.epoch % self.training_config.watching_epoches == 0:
-                self._watching()
-
-        self.auto_set_to_train_mode()
-
-        return result
-
-    return run_one_epoch
+    return one_epoch_func_decorator
 
 
-def register_to_run_one_iteration(
-    one_iteration_func: function, only_training: bool = False
-):
+def register_to_run_one_iteration(only_training: bool = False):
 
-    @functools.wraps(one_iteration_func)
-    def run_one_iteration(self: TrainerMixin, *args, **kwargs):
-        result = one_iteration_func(*args, **kwargs)
-        self.flag.step += 1
+    def one_iteration_func_decorator(one_iteration_func: function):
 
-        if only_training:
+        @functools.wraps(one_iteration_func)
+        def run_one_iteration(self: TrainerMixin, *args, **kwargs):
+            result = one_iteration_func(*args, **kwargs)
+            self.flag.step += 1
+
+            if only_training:
+                return result
+
+            self.auto_set_to_eval_mode()
+
+            if self.training_config.checkpointing_steps is not None:
+                if self.flag.step % self.training_config.checkpointing_steps == 0:
+                    self._save_checkpoint()
+
+            if self.training_config.saving_steps is not None:
+                if self.flag.step % self.training_config.saving_steps == 0:
+                    self._save_training_status()
+
+            if self.training_config.validation_steps is not None:
+                if self.flag.step % self.training_config.validation_steps == 0:
+                    self._validation()
+
+            if self.training_config.watching_steps is not None:
+                if self.flag.step % self.training_config.watching_steps == 0:
+                    self._watching()
+
+            self.auto_set_to_train_mode()
+
             return result
 
-        self.auto_set_to_eval_mode()
+        return run_one_iteration
 
-        if self.training_config.checkpointing_steps is not None:
-            if self.flag.step % self.training_config.checkpointing_steps == 0:
-                self._save_checkpoint()
-
-        if self.training_config.saving_steps is not None:
-            if self.flag.step % self.training_config.saving_steps == 0:
-                self._save_training_status()
-
-        if self.training_config.validation_steps is not None:
-            if self.flag.step % self.training_config.validation_steps == 0:
-                self._validation()
-
-        if self.training_config.watching_steps is not None:
-            if self.flag.step % self.training_config.watching_steps == 0:
-                self._watching()
-
-        self.auto_set_to_train_mode()
-
-        return result
-
-    return run_one_iteration
+    return one_iteration_func_decorator
 
 
 def auto_trainer_from_pretrained(path: str, **kwargs):
