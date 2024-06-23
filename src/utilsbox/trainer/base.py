@@ -66,24 +66,24 @@ class TrainerMixin(abc.ABC, ConfigMixin):
         seed_every_thing(seed)
 
     def _set_training_config(self, training_config: Dict):
-        self.training_config = context.TrainingConfig(**training_config)
+        self.context.training_config = context.TrainingConfig(**training_config)
 
     def _reset_flag(self, epoch: int = 0, step: int = 0):
         self.context.flag.epoch = epoch
         self.context.flag.step = step
 
     def register_accelerator(self, accelerator: accelerate.Accelerator):
-        self.accelerator = accelerator
+        self.context.accelerator = accelerator
 
     @property
     def is_local_main_process(self) -> bool:
-        if self.accelerator is None:
+        if self.context.accelerator is None:
             return True
-        return self.accelerator.is_local_main_process
+        return self.context.accelerator.is_local_main_process
 
     def wait_for_everyone(self):
-        if self.accelerator is not None:
-            self.accelerator.wait_for_everyone()
+        if self.context.accelerator is not None:
+            self.context.accelerator.wait_for_everyone()
 
     @abc.abstractmethod
     def auto_init(self, reload: bool = False):
@@ -213,8 +213,10 @@ class TrainerMixin(abc.ABC, ConfigMixin):
         self = cls.from_config_file(config_path)
         self.auto_load_status()
 
-        logger.info(f"Warm up for epoch={self.flag.epoch} and step={self.flag.step}.")
-        if self.flag.step == 0 and self.flag.epoch == 0:
+        logger.info(
+            f"Warm up for epoch={self.context.flag.epoch} and step={self.context.flag.step}."
+        )
+        if self.context.flag.step == 0 and self.context.flag.epoch == 0:
             return self
         # _step = 0
         # _epoch = 0
@@ -230,8 +232,10 @@ class TrainerMixin(abc.ABC, ConfigMixin):
         #                 )
         #     _epoch += 1
 
-        expect_epoch = self.flag.step // len(self.dataset_manager.training_dataloader)
-        if expect_epoch != self.flag.epoch:
+        expect_epoch = self.context.flag.step // len(
+            self.context.dataset_manager.training_dataloader
+        )
+        if expect_epoch != self.context.flag.epoch:
             raise RuntimeError("`current_epoch` and `current_step` mismatch.")
 
         return self
@@ -244,28 +248,28 @@ def register_to_run_one_epoch(only_training: bool = False):
         @functools.wraps(one_epoch_func)
         def run_one_epoch(self: TrainerMixin, *args, **kwargs):
             result = one_epoch_func(*args, **kwargs)
-            self.flag.epoch += 1
+            self.context.flag.epoch += 1
 
             if only_training:
                 return result
 
             self.auto_set_to_eval_mode()
 
-            if self.training_config.checkpointing_epoches is not None:
-                if self.flag.epoch % self.training_config.checkpointing_epoches == 0:
-                    self._save_checkpoint()
+            # if self.training_config.checkpointing_epoches is not None:
+            #     if self.flag.epoch % self.training_config.checkpointing_epoches == 0:
+            #         self._save_checkpoint()
 
-            if self.training_config.saving_epoches is not None:
-                if self.flag.epoch % self.training_config.saving_epoches == 0:
-                    self._save_training_status()
+            # if self.training_config.saving_epoches is not None:
+            #     if self.flag.epoch % self.training_config.saving_epoches == 0:
+            #         self._save_training_status()
 
-            if self.training_config.validation_epoches is not None:
-                if self.flag.epoch % self.training_config.validation_epoches == 0:
-                    self._validation()
+            # if self.training_config.validation_epoches is not None:
+            #     if self.flag.epoch % self.training_config.validation_epoches == 0:
+            #         self._validation()
 
-            if self.training_config.watching_epoches is not None:
-                if self.flag.epoch % self.training_config.watching_epoches == 0:
-                    self._watching()
+            # if self.training_config.watching_epoches is not None:
+            #     if self.flag.epoch % self.training_config.watching_epoches == 0:
+            #         self._watching()
 
             self.auto_set_to_train_mode()
 
@@ -283,28 +287,28 @@ def register_to_run_one_iteration(only_training: bool = False):
         @functools.wraps(one_iteration_func)
         def run_one_iteration(self: TrainerMixin, *args, **kwargs):
             result = one_iteration_func(*args, **kwargs)
-            self.flag.step += 1
+            self.context.flag.step += 1
 
             if only_training:
                 return result
 
             self.auto_set_to_eval_mode()
 
-            if self.training_config.checkpointing_steps is not None:
-                if self.flag.step % self.training_config.checkpointing_steps == 0:
-                    self._save_checkpoint()
+            # if self.training_config.checkpointing_steps is not None:
+            #     if self.flag.step % self.training_config.checkpointing_steps == 0:
+            #         self._save_checkpoint()
 
-            if self.training_config.saving_steps is not None:
-                if self.flag.step % self.training_config.saving_steps == 0:
-                    self._save_training_status()
+            # if self.training_config.saving_steps is not None:
+            #     if self.flag.step % self.training_config.saving_steps == 0:
+            #         self._save_training_status()
 
-            if self.training_config.validation_steps is not None:
-                if self.flag.step % self.training_config.validation_steps == 0:
-                    self._validation()
+            # if self.training_config.validation_steps is not None:
+            #     if self.flag.step % self.training_config.validation_steps == 0:
+            #         self._validation()
 
-            if self.training_config.watching_steps is not None:
-                if self.flag.step % self.training_config.watching_steps == 0:
-                    self._watching()
+            # if self.training_config.watching_steps is not None:
+            #     if self.flag.step % self.training_config.watching_steps == 0:
+            #         self._watching()
 
             self.auto_set_to_train_mode()
 

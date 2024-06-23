@@ -10,11 +10,11 @@ class Callback:
     def __init__(self):
         pass
 
-    def __enter__(self):
-        pass
+    # def __enter__(self):
+    #     pass
 
-    def __exit__(self, *err):
-        """Release resources here if have any."""
+    # def __exit__(self, *err):
+    #     """Release resources here if have any."""
 
     def begin(self, run_context: TrainerContext):
         pass
