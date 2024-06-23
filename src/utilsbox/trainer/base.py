@@ -13,7 +13,7 @@ import torch
 import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
 
-from . import constant
+from . import constant, context
 from ..logger.logging import init_logger
 from ..random._seeds import seed_every_thing
 from ..decorators import Register
@@ -35,107 +35,12 @@ def get_trainer_builder(name: str):
     return _trainer_register[name]
 
 
-class TrainingConfig:
-    def __init__(
-        self,
-        max_epoches: int = None,
-        max_steps: int = None,
-        checkpointing_epoches: int = None,
-        checkpointing_steps: int = None,
-        validation_epoches: int = None,
-        validation_steps: int = None,
-        saving_epoches: int = None,
-        saving_steps: int = None,
-        watching_epoches: int = None,
-        watching_steps: int = None,
-    ) -> None:
-        self.max_epoches = max_epoches
-        self.max_steps = max_steps
-        if (max_epoches is None) and (max_steps is None):
-            logger.warning(
-                f"Both `max_epochs` and `max_steps` are None. "
-                f"`max_epochs` is automatically set to 10000."
-            )
-            self.max_epoches = 10000
-        elif (max_epoches is not None) and (max_steps is not None):
-            logger.warning(
-                f"Both `max_epochs` and `max_first` are given. "
-                f"Training will end when either limit is reached."
-            )
-
-        self.checkpointing_epoches = checkpointing_epoches
-        self.checkpointing_steps = checkpointing_steps
-        if (checkpointing_epoches is None) and (checkpointing_steps is None):
-            logger.warning(
-                f"Both `checkpointing_epochs` and `checkpointing_steps` are None. "
-                f"No checkpoints will be saved during the training."
-            )
-        elif (checkpointing_epoches is not None) and (checkpointing_steps is not None):
-            logger.warning(
-                f"Both `checkpointing_epochs` and `checkpointing_steps` are given. "
-                f"All checkpoints meeting the criteria will be saved."
-            )
-
-        self.validation_epoches = validation_epoches
-        self.validation_steps = validation_steps
-        if (validation_epoches is None) and (validation_steps is None):
-            logger.warning(
-                f"Both `validation_epochs` and `validation_steps` are None. "
-                f"No validation will be performed during the training."
-            )
-        elif (validation_epoches is not None) and (validation_steps is not None):
-            logger.warning(
-                f"Both `validation_epochs` and `validation_steps` are given. "
-                f"All validation meeting the criteria will be performed."
-            )
-
-        self.saving_epoches = saving_epoches
-        self.saving_steps = saving_steps
-        if (saving_epoches is None) and (saving_steps is None):
-            logger.warning(
-                f"Both `saving_epochs` and `saving_steps` are None. "
-                f"No states will be saved during the training."
-            )
-        elif (saving_epoches is not None) and (saving_steps) is not None:
-            logger.warning(
-                f"Both `saving_epochs` and `saving_steps` are given. "
-                f"All states meeting the criteria will be saved."
-            )
-
-        self.watching_epoches = watching_epoches
-        self.watching_steps = watching_steps
-        if (watching_epoches is None) and (watching_steps is None):
-            logger.warning(
-                f"Both `saving_epochs` and `saving_steps` are None. "
-                f"No variables will be saved during the training."
-            )
-        elif (watching_epoches is not None) and (watching_steps is not None):
-            logger.warning(
-                f"Both `saving_epochs` and `saving_steps` are given. "
-                f"all variables meeting the criteria will be saved."
-            )
-
-
 @dataclass
 class TrainingOutputFilesManager:
     logging_file: str | os.PathLike = "training.log"
     tensorboard_dir: str | os.PathLike = "tensorboard"
     wandb_dir: str | os.PathLike = "wandb"
     checkpoints_dir: str | os.PathLike = "checkpoints"
-
-
-@dataclass
-class TrainingFlag:
-    step: int = 0
-    epoch: int = 0
-
-
-@dataclass
-class TrainingDatasetManager:
-    training_dataset: torch.utils.data.Dataset = None
-    validation_dataset: torch.utils.data.Dataset = None
-    training_dataloader: torch.utils.data.DataLoader = None
-    validation_dataloader: torch.utils.data.DataLoader = None
 
 
 class TrainerMixin(abc.ABC, ConfigMixin):
@@ -150,9 +55,10 @@ class TrainerMixin(abc.ABC, ConfigMixin):
     ) -> None:
         super().__init__()
         self._set_seed(seed)
-        self.output_dir = output_dir
-        self.flag = TrainingFlag()
-        self.dataset_manager = TrainingDatasetManager()
+        # self.output_dir = output_dir
+        # self.flag = TrainingFlag()
+        # self.dataset_manager = TrainingDatasetManager()
+        self.context = context.TrainerContext(output_dir=output_dir)
         self.register_accelerator(None)
 
     def _set_seed(self, seed: int):
@@ -160,7 +66,11 @@ class TrainerMixin(abc.ABC, ConfigMixin):
         seed_every_thing(seed)
 
     def _set_training_config(self, training_config: Dict):
-        self.training_config = TrainingConfig(**training_config)
+        self.training_config = context.TrainingConfig(**training_config)
+
+    def _reset_flag(self, epoch: int = 0, step: int = 0):
+        self.context.flag.epoch = epoch
+        self.context.flag.step = step
 
     def register_accelerator(self, accelerator: accelerate.Accelerator):
         self.accelerator = accelerator
@@ -306,19 +216,25 @@ class TrainerMixin(abc.ABC, ConfigMixin):
         logger.info(f"Warm up for epoch={self.flag.epoch} and step={self.flag.step}.")
         if self.flag.step == 0 and self.flag.epoch == 0:
             return self
-        _step = 0
-        _epoch = 0
-        while True:
-            for _ in self.dataset_manager.training_dataloader:
-                _step += 1
-                if _step == self.flag.step:
-                    if _epoch == self.flag.epoch:
-                        return self
-                    else:
-                        raise RuntimeError(
-                            "`current_epoch` and `current_step` mismatch."
-                        )
-            _epoch += 1
+        # _step = 0
+        # _epoch = 0
+        # while True:
+        #     for _ in self.dataset_manager.training_dataloader:
+        #         _step += 1
+        #         if _step == self.flag.step:
+        #             if _epoch == self.flag.epoch:
+        #                 return self
+        #             else:
+        #                 raise RuntimeError(
+        #                     "`current_epoch` and `current_step` mismatch."
+        #                 )
+        #     _epoch += 1
+
+        expect_epoch = self.flag.step // len(self.dataset_manager.training_dataloader)
+        if expect_epoch != self.flag.epoch:
+            raise RuntimeError("`current_epoch` and `current_step` mismatch.")
+
+        return self
 
 
 def register_to_run_one_epoch(only_training: bool = False):
