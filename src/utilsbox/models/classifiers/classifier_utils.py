@@ -8,6 +8,7 @@ from torchvision.transforms.functional import resize
 from diffusers.utils.outputs import BaseOutput
 
 from ..modeling_utils import ModelMixin, get_model_builder
+from ...configuration import extract_init_dict
 
 
 class BaseImageModel(ModelMixin):
@@ -184,7 +185,8 @@ class BaseClassifierWrapperModel(BaseImageClassifier):
     @staticmethod
     def create_from_model_impl(cls, inner_model: ModelMixin, **kwargs):
         inner_model_name = inner_model.__class__.__name__
-        inner_model_kwargs = inner_model.extract_init_dict(inner_model._internal_dict)
+        # inner_model_kwargs = inner_model.extract_init_dict(inner_model._internal_dict)
+        inner_model_kwargs = extract_init_dict(inner_model)
         inner_model_kwargs = inner_model_kwargs[0]
         # print(inner_model_name, inner_model_kwargs.keys())
         wrapped_model = cls(

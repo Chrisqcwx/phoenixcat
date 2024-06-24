@@ -1,11 +1,31 @@
 import logging
+from typing import Dict, List, Any, Literal
+
+from diffusers.configuration_utils import register_to_config
 
 from ..base import TrainerMixin
+from ...decorators import Register
+from ...configuration import ConfigMixin, extract_init_dict, auto_cls_from_pretrained
+
 
 logger = logging.getLogger(__name__)
 
+_callback_register = Register('callback')
 
-class Callback:
+register_callback = _callback_register.register()
+
+
+def list_callbacks():
+    return list(_callback_register.keys())
+
+
+def get_callback_builder(name: str):
+    return _callback_register[name]
+
+
+class CallbackMixin(ConfigMixin):
+
+    config_name = 'callback.json'
 
     def __init__(self):
         pass
@@ -143,30 +163,48 @@ class Callback:
         self.end(trainer)
 
 
-class ComposeCallback(Callback):
+@register_callback
+class ComposeCallback(CallbackMixin):
     """
     Sequential execution of callback functions.
 
     Execute Callback functions at certain points.
-
-    Args:
-        callbacks (Optional[list[Callback], Callback]): None, callback, or callbacks list.
     """
 
-    def __init__(self, callbacks):
+    @register_to_config
+    def __init__(self, callbacks_init_list: List[Dict[Literal['name', 'kwargs'], Any]]):
         self._callbacks = []
-        if isinstance(callbacks, Callback):
-            self._callbacks.append(callbacks)
+        for cb_args in callbacks_init_list:
+            if 'name' not in cb_args and 'kwargs' not in cb_args:
+                raise RuntimeError(f'Parameters of `callbacks_init_list` error!')
+            factory = get_callback_builder(cb_args['name'])
+            cb = factory(**cb_args['kwargs'])
+            self._callbacks.append(cb)
+
+    @classmethod
+    def create_from_callbacks(cls, callbacks: CallbackMixin, **kwargs):
+
+        _callbacks = []
+        if isinstance(callbacks, CallbackMixin):
+            _callbacks.append(callbacks)
         elif isinstance(callbacks, list):
             for cb in callbacks:
-                if not isinstance(cb, Callback):
+                if not isinstance(cb, CallbackMixin):
                     raise TypeError(
                         "When the 'callbacks' is a list, the elements in "
                         "'callbacks' must be Callback functions."
                     )
-                self._callbacks.append(cb)
+                _callbacks.append(cb)
         elif callbacks is not None:
             raise TypeError("The 'callbacks' is not a Callback or a list of Callback.")
+
+        cb_list = []
+        for inner_cb in _callbacks:
+            inner_cb_name = inner_cb.__class__.__name__
+            inner_cb_kwargs = extract_init_dict(inner_cb)[0]
+            cb_list.append({'name': inner_cb_name, 'kwargs': inner_cb_kwargs})
+
+        return cls(cb_list)
 
     def begin(self, trainer):
         """Called once before network train or eval."""
@@ -257,3 +295,8 @@ class ComposeCallback(Callback):
         """Called after network eval end."""
         for cb in self._callbacks:
             cb.on_eval_end(trainer)
+
+
+def auto_trainer_from_pretrained(path: str, **kwargs):
+
+    return auto_cls_from_pretrained(_callback_register, CallbackMixin, path, **kwargs)

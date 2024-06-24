@@ -3,13 +3,14 @@ import os
 from typing import Literal
 
 import torch
+from diffusers.configuration_utils import register_to_config
 
-from .base import Callback
+from .base import CallbackMixin, register_callback
 from ..base import TrainerMixin
 from ..constant import TRAINER_STATUS_NAME
 
 
-class CheckpointCallback(Callback):
+class CheckpointCallbackMixin(CallbackMixin):
 
     def __init__(self, interval: int, level: Literal['epoch', 'step'] = 'epoch'):
         super().__init__()
@@ -42,8 +43,10 @@ class CheckpointCallback(Callback):
         self.save_checkpoint(trainer)
 
 
-class ModelCheckpointCallback(CheckpointCallback):
+@register_callback
+class ModelCheckpointCallback(CheckpointCallbackMixin):
 
+    @register_to_config
     def __init__(
         self, interval: int, level: Literal['epoch'] | Literal['step'] = 'epoch'
     ):
@@ -66,7 +69,14 @@ class ModelCheckpointCallback(CheckpointCallback):
         self.save_checkpoint(trainer)
 
 
-class TrainStatusCheckpointCallback(CheckpointCallback):
+@register_callback
+class TrainStatusCheckpointCallback(CheckpointCallbackMixin):
+
+    @register_to_config
+    def __init__(
+        self, interval: int, level: Literal['epoch'] | Literal['step'] = 'epoch'
+    ):
+        super().__init__(interval, level)
 
     def save_checkpoint(self, trainer: TrainerMixin):
         return torch.save(
