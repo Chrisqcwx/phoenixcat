@@ -3,6 +3,7 @@ import datetime
 import functools
 import logging
 import os
+import importlib
 from dataclasses import dataclass, field
 from typing import Dict, AnyStr
 
@@ -238,8 +239,16 @@ class TrainerMixin(abc.ABC, ConfigMixin):
     def from_py_config(
         cls,
         config_path: os.PathLike = None,
-        config_module: str = None,
     ):
+        module_name = os.path.splitext(os.path.basename(config_path))[0]
+
+        spec = importlib.util.spec_from_file_location(module_name, config_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        config = {k: v for k, v in module.__dict__.items() if not k.startswith('__')}
+        return cls.from_config(config)
+
         # TODO: 完善从 py 文件读取配置文件的功能.
         # TODO: 太恶心了 我写不动 谁爱用这个功能谁写.
         raise NotImplementedError
@@ -266,6 +275,8 @@ class TrainerMixin(abc.ABC, ConfigMixin):
             return cls.from_yaml_config(config_path)
         if extension in constant.ConfigSuffix.ini:
             return cls.from_ini_config(config_path)
+        if extension in constant.ConfigSuffix.py:
+            return cls.from_py_config(config_path)
         raise NotImplementedError(
             f"Unknown suffix '{extension}' in path '{config_path}'."
         )
