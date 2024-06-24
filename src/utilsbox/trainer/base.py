@@ -307,11 +307,12 @@ def register_to_run_one_epoch(only_training: bool = False):
         @functools.wraps(one_epoch_func)
         def run_one_epoch(self: TrainerMixin, *args, **kwargs):
 
+            self.flag.epoch += 1
+
             for callback in self.callbacks:
                 callback.on_train_epoch_begin()
 
             result = one_epoch_func(*args, **kwargs)
-            self.flag.epoch += 1
 
             for callback in self.callbacks:
                 callback.on_train_epoch_end()
@@ -359,11 +360,12 @@ def register_to_run_one_iteration(only_training: bool = False):
         @functools.wraps(one_iteration_func)
         def run_one_iteration(self: TrainerMixin, *args, **kwargs):
 
+            self.flag.step += 1
+
             for callback in self.callbacks:
                 callback.on_train_step_begin()
 
             result = one_iteration_func(*args, **kwargs)
-            self.flag.step += 1
 
             for callback in self.callbacks:
                 callback.on_train_step_end()
