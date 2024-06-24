@@ -49,11 +49,12 @@ register_model = _model_register.register()
 def list_models():
     return list(_model_register.keys())
 
+
 def get_model_builder(name: str):
     return _model_register[name]
 
 
-# Change weights name from HF
+# adapt from https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/modeling_utils.py
 class ModelMixin(HF_ModelMixin, ConfigMixin):
 
     WEIGHTS_NAME = None
