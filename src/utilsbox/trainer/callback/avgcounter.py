@@ -3,7 +3,7 @@ import logging
 import torch
 import numpy as np
 
-from utilsbox.trainer.context import TrainerContext
+from utilsbox.trainer.base import TrainerMixin
 
 from .base import Callback
 
@@ -20,21 +20,19 @@ class AvgDataCallback(Callback):
         self.data = 0
         self.cnt = 0
 
-    def epoch_begin(self, run_context: TrainerContext):
+    def epoch_begin(self, trainer: TrainerMixin):
         self.data = 0
         self.cnt = 0
 
-    def epoch_end(self, run_context: TrainerContext):
+    def epoch_end(self, trainer: TrainerMixin):
         avg_data = 0 if self.cnt == 0 else self.data / self.cnt
         logger.info(f'{self.name}: {avg_data:.6f}')
 
-    def step_end(self, run_context: TrainerContext):
-        data = run_context
+    def step_end(self, trainer: TrainerMixin):
+        data = trainer
         for n in self.fullnames:
             if not hasattr(data, n):
-                raise RuntimeError(
-                    f'`run_context` do not has attribute `{self.fullname}`'
-                )
+                raise RuntimeError(f'`trainer` do not has attribute `{self.fullname}`')
             data = getattr(data, n)
 
         self.cnt += 1

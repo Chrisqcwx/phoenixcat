@@ -5,7 +5,8 @@ from typing import Literal
 import torch
 
 from .base import Callback
-from ..context import TrainerContext
+from ..base import TrainerMixin
+from ..constant import TRAINER_STATUS_NAME
 
 
 class CheckpointCallback(Callback):
@@ -22,25 +23,23 @@ class CheckpointCallback(Callback):
         else:
             raise RuntimeError(f'The level must be epoch or step')
 
-    def get_value(self, run_context: TrainerContext):
-        return (
-            run_context.flag.epoch if self.level == 'epoch' else run_context.flag.step
-        )
+    def get_value(self, trainer: TrainerMixin):
+        return trainer.flag.epoch if self.level == 'epoch' else trainer.flag.step
 
     @abc.abstractmethod
-    def save_checkpoint(self, run_context: TrainerContext):
+    def save_checkpoint(self, trainer: TrainerMixin):
         pass
 
-    def _step_end(self, run_context: TrainerContext):
-        if run_context.flag.step % self.interval == 0:
-            self.save_checkpoint(run_context)
+    def _step_end(self, trainer: TrainerMixin):
+        if trainer.flag.step % self.interval == 0:
+            self.save_checkpoint(trainer)
 
-    def _epoch_end(self, run_context: TrainerContext):
-        if run_context.flag.epoch % self.interval == 0:
-            self.save_checkpoint(run_context)
+    def _epoch_end(self, trainer: TrainerMixin):
+        if trainer.flag.epoch % self.interval == 0:
+            self.save_checkpoint(trainer)
 
-    def on_train_end(self, run_context: TrainerContext):
-        self.save_checkpoint(run_context)
+    def on_train_end(self, trainer: TrainerMixin):
+        self.save_checkpoint(trainer)
 
 
 class ModelCheckpointCallback(CheckpointCallback):
@@ -50,15 +49,26 @@ class ModelCheckpointCallback(CheckpointCallback):
     ):
         super().__init__(interval, level)
 
-    def save_checkpoint(self, run_context: TrainerContext):
+    def save_checkpoint(self, trainer: TrainerMixin):
         save_dir = os.path.join(
-            run_context.output_dir,
+            trainer.output_dir,
             'checkpoints',
-            f'{self.level}_{self.get_value(run_context)}',
+            f'{self.level}_{self.get_value(trainer)}',
         )
-        for name, model in run_context.models.items():
+        for name, model in trainer.models.items():
             save_path = os.path.join(save_dir, name)
             os.makedirs(save_path, exist_ok=True)
             model.model.save_pretrained(
-                save_path,
+                save_path, is_main_process=trainer.is_local_main_process
             )
+
+    def on_train_end(self, trainer: TrainerMixin):
+        self.save_checkpoint(trainer)
+
+
+class TrainStatusCheckpointCallback(CheckpointCallback):
+
+    def save_checkpoint(self, trainer: TrainerMixin):
+        return torch.save(
+            trainer, os.path.join(trainer.output_dir, TRAINER_STATUS_NAME)
+        )

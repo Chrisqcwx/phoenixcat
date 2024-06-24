@@ -1,6 +1,6 @@
 import logging
 
-from ..context import TrainerContext
+from ..base import TrainerMixin
 
 logger = logging.getLogger(__name__)
 
@@ -16,131 +16,131 @@ class Callback:
     # def __exit__(self, *err):
     #     """Release resources here if have any."""
 
-    def begin(self, run_context: TrainerContext):
+    def begin(self, trainer: TrainerMixin):
         pass
 
-    def step_begin(self, run_context: TrainerContext):
+    def step_begin(self, trainer: TrainerMixin):
         pass
 
-    def step_end(self, run_context: TrainerContext):
+    def step_end(self, trainer: TrainerMixin):
         pass
 
-    def epoch_begin(self, run_context: TrainerContext):
+    def epoch_begin(self, trainer: TrainerMixin):
         pass
 
-    def epoch_end(self, run_context: TrainerContext):
+    def epoch_end(self, trainer: TrainerMixin):
         pass
 
-    def end(self, run_context: TrainerContext):
+    def end(self, trainer: TrainerMixin):
         pass
 
-    def on_train_begin(self, run_context: TrainerContext):
+    def on_train_begin(self, trainer: TrainerMixin):
         """
         Called once before the network training.
 
         Args:
-            run_context (RunContext): Include some information of the model.
+            trainer (TrainerMixin): Include some information of the model.
         """
-        self.begin(run_context)
+        self.begin(trainer)
 
-    def on_train_epoch_begin(self, run_context: TrainerContext):
+    def on_train_epoch_begin(self, trainer: TrainerMixin):
         """
         Called before each training epoch begin.
 
         Args:
-            run_context (RunContext): Include some information of the model.
+            trainer (TrainerMixin): Include some information of the model.
         """
-        self.epoch_begin(run_context)
+        self.epoch_begin(trainer)
 
-    def on_train_epoch_end(self, run_context: TrainerContext):
+    def on_train_epoch_end(self, trainer: TrainerMixin):
         """
         Called after each training epoch end.
 
         Args:
-            run_context (RunContext): Include some information of the model.
+            trainer (TrainerMixin): Include some information of the model.
         """
-        self.epoch_end(run_context)
+        self.epoch_end(trainer)
 
-    def on_train_step_begin(self, run_context: TrainerContext):
+    def on_train_step_begin(self, trainer: TrainerMixin):
         """
         Called before each training step begin.
 
         Args:
-            run_context (RunContext): Include some information of the model.
+            trainer (TrainerMixin): Include some information of the model.
         """
-        self.step_begin(run_context)
+        self.step_begin(trainer)
 
-    def on_train_step_end(self, run_context: TrainerContext):
+    def on_train_step_end(self, trainer: TrainerMixin):
         """
         Called after each training step end.
 
         Args:
-            run_context (RunContext): Include some information of the model.
+            trainer (TrainerMixin): Include some information of the model.
         """
-        self.step_end(run_context)
+        self.step_end(trainer)
 
-    def on_train_end(self, run_context: TrainerContext):
+    def on_train_end(self, trainer: TrainerMixin):
         """
         Called after training end.
 
         Args:
-            run_context (RunContext): Include some information of the model.
+            trainer (TrainerMixin): Include some information of the model.
         """
-        self.end(run_context)
+        self.end(trainer)
 
-    def on_eval_begin(self, run_context: TrainerContext):
+    def on_eval_begin(self, trainer: TrainerMixin):
         """
         Called before eval begin.
 
         Args:
-            run_context (RunContext): Include some information of the model.
+            trainer (TrainerMixin): Include some information of the model.
         """
-        self.begin(run_context)
+        self.begin(trainer)
 
-    def on_eval_epoch_begin(self, run_context: TrainerContext):
+    def on_eval_epoch_begin(self, trainer: TrainerMixin):
         """
         Called before eval epoch begin.
 
         Args:
-            run_context (RunContext): Include some information of the model.
+            trainer (TrainerMixin): Include some information of the model.
         """
-        self.epoch_begin(run_context)
+        self.epoch_begin(trainer)
 
-    def on_eval_epoch_end(self, run_context: TrainerContext):
+    def on_eval_epoch_end(self, trainer: TrainerMixin):
         """
         Called after eval epoch end.
 
         Args:
-            run_context (RunContext): Include some information of the model.
+            trainer (TrainerMixin): Include some information of the model.
         """
-        self.epoch_end(run_context)
+        self.epoch_end(trainer)
 
-    def on_eval_step_begin(self, run_context: TrainerContext):
+    def on_eval_step_begin(self, trainer: TrainerMixin):
         """
         Called before each eval step begin.
 
         Args:
-            run_context (RunContext): Include some information of the model.
+            trainer (TrainerMixin): Include some information of the model.
         """
-        self.step_begin(run_context)
+        self.step_begin(trainer)
 
-    def on_eval_step_end(self, run_context: TrainerContext):
+    def on_eval_step_end(self, trainer: TrainerMixin):
         """
         Called after each eval step end.
 
         Args:
-            run_context (RunContext): Include some information of the model.
+            trainer (TrainerMixin): Include some information of the model.
         """
-        self.step_end(run_context)
+        self.step_end(trainer)
 
-    def on_eval_end(self, run_context: TrainerContext):
+    def on_eval_end(self, trainer: TrainerMixin):
         """
         Called after eval end.
 
         Args:
-            run_context (RunContext): Include some information of the model.
+            trainer (TrainerMixin): Include some information of the model.
         """
-        self.end(run_context)
+        self.end(trainer)
 
 
 class ComposeCallback(Callback):
@@ -168,92 +168,92 @@ class ComposeCallback(Callback):
         elif callbacks is not None:
             raise TypeError("The 'callbacks' is not a Callback or a list of Callback.")
 
-    def begin(self, run_context):
+    def begin(self, trainer):
         """Called once before network train or eval."""
         for cb in self._callbacks:
-            cb.begin(run_context)
+            cb.begin(trainer)
 
-    def epoch_begin(self, run_context):
+    def epoch_begin(self, trainer):
         """Called before each epoch begin."""
         for cb in self._callbacks:
-            cb.epoch_begin(run_context)
+            cb.epoch_begin(trainer)
 
-    def epoch_end(self, run_context):
+    def epoch_end(self, trainer):
         """Called after each epoch finished."""
         for cb in self._callbacks:
-            cb.epoch_end(run_context)
+            cb.epoch_end(trainer)
 
-    def step_begin(self, run_context):
+    def step_begin(self, trainer):
         """Called before each step begin."""
         for cb in self._callbacks:
-            cb.step_begin(run_context)
+            cb.step_begin(trainer)
 
-    def step_end(self, run_context):
+    def step_end(self, trainer):
         """Called after each step finished."""
         for cb in self._callbacks:
-            cb.step_end(run_context)
+            cb.step_end(trainer)
 
-    def end(self, run_context):
+    def end(self, trainer):
         """Called once after network train or eval."""
         for cb in self._callbacks:
-            cb.end(run_context)
+            cb.end(trainer)
 
-    def on_train_begin(self, run_context):
+    def on_train_begin(self, trainer):
         """Called before network train."""
         for cb in self._callbacks:
-            cb.on_train_begin(run_context)
+            cb.on_train_begin(trainer)
 
-    def on_train_epoch_begin(self, run_context):
+    def on_train_epoch_begin(self, trainer):
         """Called before each train epoch begin."""
         for cb in self._callbacks:
-            cb.on_train_epoch_begin(run_context)
+            cb.on_train_epoch_begin(trainer)
 
-    def on_train_epoch_end(self, run_context):
+    def on_train_epoch_end(self, trainer):
         """Called after each train epoch finished."""
         for cb in self._callbacks:
-            cb.on_train_epoch_end(run_context)
+            cb.on_train_epoch_end(trainer)
 
-    def on_train_step_begin(self, run_context):
+    def on_train_step_begin(self, trainer):
         """Called before each train step begin."""
         for cb in self._callbacks:
-            cb.on_train_step_begin(run_context)
+            cb.on_train_step_begin(trainer)
 
-    def on_train_step_end(self, run_context):
+    def on_train_step_end(self, trainer):
         """Called after each train step finished."""
         for cb in self._callbacks:
-            cb.on_train_step_end(run_context)
+            cb.on_train_step_end(trainer)
 
-    def on_train_end(self, run_context):
+    def on_train_end(self, trainer):
         """Called after network train end."""
         for cb in self._callbacks:
-            cb.on_train_end(run_context)
+            cb.on_train_end(trainer)
 
-    def on_eval_begin(self, run_context):
+    def on_eval_begin(self, trainer):
         """Called before network eval."""
         for cb in self._callbacks:
-            cb.on_eval_begin(run_context)
+            cb.on_eval_begin(trainer)
 
-    def on_eval_epoch_begin(self, run_context):
+    def on_eval_epoch_begin(self, trainer):
         """Called before eval epoch begin."""
         for cb in self._callbacks:
-            cb.on_eval_epoch_begin(run_context)
+            cb.on_eval_epoch_begin(trainer)
 
-    def on_eval_epoch_end(self, run_context):
+    def on_eval_epoch_end(self, trainer):
         """Called after eval epoch finished."""
         for cb in self._callbacks:
-            cb.on_eval_epoch_end(run_context)
+            cb.on_eval_epoch_end(trainer)
 
-    def on_eval_step_begin(self, run_context):
+    def on_eval_step_begin(self, trainer):
         """Called before each eval step begin."""
         for cb in self._callbacks:
-            cb.on_eval_step_begin(run_context)
+            cb.on_eval_step_begin(trainer)
 
-    def on_eval_step_end(self, run_context):
+    def on_eval_step_end(self, trainer):
         """Called after each eval step finished."""
         for cb in self._callbacks:
-            cb.on_eval_step_end(run_context)
+            cb.on_eval_step_end(trainer)
 
-    def on_eval_end(self, run_context):
+    def on_eval_end(self, trainer):
         """Called after network eval end."""
         for cb in self._callbacks:
-            cb.on_eval_end(run_context)
+            cb.on_eval_end(trainer)

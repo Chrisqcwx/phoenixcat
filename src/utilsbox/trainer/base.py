@@ -3,8 +3,8 @@ import datetime
 import functools
 import logging
 import os
-from dataclasses import dataclass
-from typing import Dict
+from dataclasses import dataclass, field
+from typing import Dict, AnyStr
 
 import accelerate
 
@@ -13,11 +13,12 @@ import torch
 import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
 
-from . import constant, context
+from . import constant
 from ..logger.logging import init_logger
 from ..random._seeds import seed_every_thing
 from ..decorators import Register
 from ..configuration import ConfigMixin, auto_cls_from_pretrained
+from ..models import ModelMixin
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,54 @@ class TrainingOutputFilesManager:
     checkpoints_dir: str | os.PathLike = "checkpoints"
 
 
+class TrainingConfig:
+    def __init__(
+        self,
+        max_epoches: int = None,
+        max_steps: int = None,
+    ) -> None:
+        self.max_epoches = max_epoches
+        self.max_steps = max_steps
+        if (max_epoches is None) and (max_steps is None):
+            logger.warning(
+                f"Both `max_epochs` and `max_steps` are None. "
+                f"`max_epochs` is automatically set to 10000."
+            )
+            self.max_epoches = 10000
+        elif (max_epoches is not None) and (max_steps is not None):
+            logger.warning(
+                f"Both `max_epochs` and `max_first` are given. "
+                f"Training will end when either limit is reached."
+            )
+
+
+@dataclass
+class TrainingFlag:
+    step: int = 0
+    epoch: int = 0
+
+
+@dataclass
+class TrainingDatasetManager:
+    training_dataset: torch.utils.data.Dataset = None
+    validation_dataset: torch.utils.data.Dataset = None
+    training_dataloader: torch.utils.data.DataLoader = None
+    validation_dataloader: torch.utils.data.DataLoader = None
+
+
+@dataclass
+class TrainModelManager:
+    model: ModelMixin
+    optimizer: torch.optim.Optimizer
+    lr_scheduler: torch.optim.lr_scheduler.LRScheduler | None = None
+
+
+@dataclass
+class TrainTempValues:
+
+    loss: torch.Tensor = 0
+
+
 class TrainerMixin(abc.ABC, ConfigMixin):
 
     config_name = "config.json"
@@ -55,35 +104,49 @@ class TrainerMixin(abc.ABC, ConfigMixin):
     ) -> None:
         super().__init__()
         self._set_seed(seed)
-        # self.output_dir = output_dir
-        # self.flag = TrainingFlag()
-        # self.dataset_manager = TrainingDatasetManager()
-        self.context = context.TrainerContext(output_dir=output_dir)
+        self.output_dir = output_dir
         self.register_accelerator(None)
+        self.callbacks = []
+
+        self.flag = TrainingFlag()
+        self.dataset_manager = TrainingDatasetManager()
+
+        self.training_config = TrainingConfig()
+
+        self.models: Dict[AnyStr, TrainModelManager] = {}
+
+        self.accelerator: accelerate.Accelerator | None = None
+
+        self.train_temp_values = TrainTempValues()
 
     def _set_seed(self, seed: int):
         self.seed = seed
         seed_every_thing(seed)
 
     def _set_training_config(self, training_config: Dict):
-        self.context.training_config = context.TrainingConfig(**training_config)
+        self.training_config = TrainingConfig(**training_config)
 
     def _reset_flag(self, epoch: int = 0, step: int = 0):
-        self.context.flag.epoch = epoch
-        self.context.flag.step = step
+        self.flag.epoch = epoch
+        self.flag.step = step
+
+    def set_callbacks(self, callbacks):
+        if callbacks is None:
+            callbacks = []
+        self.callbacks = callbacks
 
     def register_accelerator(self, accelerator: accelerate.Accelerator):
-        self.context.accelerator = accelerator
+        self.accelerator = accelerator
 
     @property
     def is_local_main_process(self) -> bool:
-        if self.context.accelerator is None:
+        if self.accelerator is None:
             return True
-        return self.context.accelerator.is_local_main_process
+        return self.accelerator.is_local_main_process
 
     def wait_for_everyone(self):
-        if self.context.accelerator is not None:
-            self.context.accelerator.wait_for_everyone()
+        if self.accelerator is not None:
+            self.accelerator.wait_for_everyone()
 
     @abc.abstractmethod
     def auto_init(self, reload: bool = False):
@@ -213,10 +276,8 @@ class TrainerMixin(abc.ABC, ConfigMixin):
         self = cls.from_config_file(config_path)
         self.auto_load_status()
 
-        logger.info(
-            f"Warm up for epoch={self.context.flag.epoch} and step={self.context.flag.step}."
-        )
-        if self.context.flag.step == 0 and self.context.flag.epoch == 0:
+        logger.info(f"Warm up for epoch={self.flag.epoch} and step={self.flag.step}.")
+        if self.flag.step == 0 and self.flag.epoch == 0:
             return self
         # _step = 0
         # _epoch = 0
@@ -232,10 +293,8 @@ class TrainerMixin(abc.ABC, ConfigMixin):
         #                 )
         #     _epoch += 1
 
-        expect_epoch = self.context.flag.step // len(
-            self.context.dataset_manager.training_dataloader
-        )
-        if expect_epoch != self.context.flag.epoch:
+        expect_epoch = self.flag.step // len(self.dataset_manager.training_dataloader)
+        if expect_epoch != self.flag.epoch:
             raise RuntimeError("`current_epoch` and `current_step` mismatch.")
 
         return self
@@ -247,13 +306,23 @@ def register_to_run_one_epoch(only_training: bool = False):
 
         @functools.wraps(one_epoch_func)
         def run_one_epoch(self: TrainerMixin, *args, **kwargs):
+
+            for callback in self.callbacks:
+                callback.on_train_epoch_begin()
+
             result = one_epoch_func(*args, **kwargs)
-            self.context.flag.epoch += 1
+            self.flag.epoch += 1
+
+            for callback in self.callbacks:
+                callback.on_train_epoch_end()
 
             if only_training:
                 return result
 
             self.auto_set_to_eval_mode()
+
+            for callback in self.callbacks:
+                callback.on_eval_epoch_begin()
 
             # if self.training_config.checkpointing_epoches is not None:
             #     if self.flag.epoch % self.training_config.checkpointing_epoches == 0:
@@ -271,6 +340,9 @@ def register_to_run_one_epoch(only_training: bool = False):
             #     if self.flag.epoch % self.training_config.watching_epoches == 0:
             #         self._watching()
 
+            for callback in self.callbacks:
+                callback.on_eval_epoch_end()
+
             self.auto_set_to_train_mode()
 
             return result
@@ -286,13 +358,23 @@ def register_to_run_one_iteration(only_training: bool = False):
 
         @functools.wraps(one_iteration_func)
         def run_one_iteration(self: TrainerMixin, *args, **kwargs):
+
+            for callback in self.callbacks:
+                callback.on_train_step_begin()
+
             result = one_iteration_func(*args, **kwargs)
-            self.context.flag.step += 1
+            self.flag.step += 1
+
+            for callback in self.callbacks:
+                callback.on_train_step_end()
 
             if only_training:
                 return result
 
             self.auto_set_to_eval_mode()
+
+            for callback in self.callbacks:
+                callback.on_eval_step_begin()
 
             # if self.training_config.checkpointing_steps is not None:
             #     if self.flag.step % self.training_config.checkpointing_steps == 0:
@@ -309,6 +391,9 @@ def register_to_run_one_iteration(only_training: bool = False):
             # if self.training_config.watching_steps is not None:
             #     if self.flag.step % self.training_config.watching_steps == 0:
             #         self._watching()
+
+            for callback in self.callbacks:
+                callback.on_eval_step_end()
 
             self.auto_set_to_train_mode()
 
