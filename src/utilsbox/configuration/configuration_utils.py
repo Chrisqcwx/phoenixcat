@@ -11,6 +11,10 @@ class ConfigMixin(HF_ConfigMixin):
     pass
 
 
+def extract_init_dict(config_model):
+    return config_model.extract_init_dict(config_model._internal_dict)
+
+
 def auto_cls_from_pretrained(
     register: Register, mixin_class: type, path: str, **kwargs
 ):

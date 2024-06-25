@@ -3,8 +3,9 @@ import datetime
 import functools
 import logging
 import os
-from dataclasses import dataclass
-from typing import Dict
+import importlib
+from dataclasses import dataclass, field
+from typing import Dict, AnyStr
 
 import accelerate
 
@@ -18,6 +19,7 @@ from ..logger.logging import init_logger
 from ..random._seeds import seed_every_thing
 from ..decorators import Register
 from ..configuration import ConfigMixin, auto_cls_from_pretrained
+from ..models import ModelMixin
 
 logger = logging.getLogger(__name__)
 
@@ -35,19 +37,19 @@ def get_trainer_builder(name: str):
     return _trainer_register[name]
 
 
+@dataclass
+class TrainingOutputFilesManager:
+    logging_file: str | os.PathLike = "training.log"
+    tensorboard_dir: str | os.PathLike = "tensorboard"
+    wandb_dir: str | os.PathLike = "wandb"
+    checkpoints_dir: str | os.PathLike = "checkpoints"
+
+
 class TrainingConfig:
     def __init__(
         self,
         max_epoches: int = None,
         max_steps: int = None,
-        checkpointing_epoches: int = None,
-        checkpointing_steps: int = None,
-        validation_epoches: int = None,
-        validation_steps: int = None,
-        saving_epoches: int = None,
-        saving_steps: int = None,
-        watching_epoches: int = None,
-        watching_steps: int = None,
     ) -> None:
         self.max_epoches = max_epoches
         self.max_steps = max_steps
@@ -62,66 +64,6 @@ class TrainingConfig:
                 f"Both `max_epochs` and `max_first` are given. "
                 f"Training will end when either limit is reached."
             )
-
-        self.checkpointing_epoches = checkpointing_epoches
-        self.checkpointing_steps = checkpointing_steps
-        if (checkpointing_epoches is None) and (checkpointing_steps is None):
-            logger.warning(
-                f"Both `checkpointing_epochs` and `checkpointing_steps` are None. "
-                f"No checkpoints will be saved during the training."
-            )
-        elif (checkpointing_epoches is not None) and (checkpointing_steps is not None):
-            logger.warning(
-                f"Both `checkpointing_epochs` and `checkpointing_steps` are given. "
-                f"All checkpoints meeting the criteria will be saved."
-            )
-
-        self.validation_epoches = validation_epoches
-        self.validation_steps = validation_steps
-        if (validation_epoches is None) and (validation_steps is None):
-            logger.warning(
-                f"Both `validation_epochs` and `validation_steps` are None. "
-                f"No validation will be performed during the training."
-            )
-        elif (validation_epoches is not None) and (validation_steps is not None):
-            logger.warning(
-                f"Both `validation_epochs` and `validation_steps` are given. "
-                f"All validation meeting the criteria will be performed."
-            )
-
-        self.saving_epoches = saving_epoches
-        self.saving_steps = saving_steps
-        if (saving_epoches is None) and (saving_steps is None):
-            logger.warning(
-                f"Both `saving_epochs` and `saving_steps` are None. "
-                f"No states will be saved during the training."
-            )
-        elif (saving_epoches is not None) and (saving_steps) is not None:
-            logger.warning(
-                f"Both `saving_epochs` and `saving_steps` are given. "
-                f"All states meeting the criteria will be saved."
-            )
-
-        self.watching_epoches = watching_epoches
-        self.watching_steps = watching_steps
-        if (watching_epoches is None) and (watching_steps is None):
-            logger.warning(
-                f"Both `saving_epochs` and `saving_steps` are None. "
-                f"No variables will be saved during the training."
-            )
-        elif (watching_epoches is not None) and (watching_steps is not None):
-            logger.warning(
-                f"Both `saving_epochs` and `saving_steps` are given. "
-                f"all variables meeting the criteria will be saved."
-            )
-
-
-@dataclass
-class TrainingOutputFilesManager:
-    logging_file: str | os.PathLike = "training.log"
-    tensorboard_dir: str | os.PathLike = "tensorboard"
-    wandb_dir: str | os.PathLike = "wandb"
-    checkpoints_dir: str | os.PathLike = "checkpoints"
 
 
 @dataclass
@@ -138,6 +80,19 @@ class TrainingDatasetManager:
     validation_dataloader: torch.utils.data.DataLoader = None
 
 
+@dataclass
+class TrainModelManager:
+    model: ModelMixin
+    optimizer: torch.optim.Optimizer
+    lr_scheduler: torch.optim.lr_scheduler.LRScheduler | None = None
+
+
+@dataclass
+class TrainTempValues:
+
+    loss: torch.Tensor = 0
+
+
 class TrainerMixin(abc.ABC, ConfigMixin):
 
     config_name = "config.json"
@@ -151,9 +106,19 @@ class TrainerMixin(abc.ABC, ConfigMixin):
         super().__init__()
         self._set_seed(seed)
         self.output_dir = output_dir
+        self.register_accelerator(None)
+        self.callbacks = []
+
         self.flag = TrainingFlag()
         self.dataset_manager = TrainingDatasetManager()
-        self.register_accelerator(None)
+
+        self.training_config = TrainingConfig()
+
+        self.models: Dict[AnyStr, TrainModelManager] = {}
+
+        self.accelerator: accelerate.Accelerator | None = None
+
+        self.train_temp_values = TrainTempValues()
 
     def _set_seed(self, seed: int):
         self.seed = seed
@@ -161,6 +126,15 @@ class TrainerMixin(abc.ABC, ConfigMixin):
 
     def _set_training_config(self, training_config: Dict):
         self.training_config = TrainingConfig(**training_config)
+
+    def _reset_flag(self, epoch: int = 0, step: int = 0):
+        self.flag.epoch = epoch
+        self.flag.step = step
+
+    def set_callbacks(self, callbacks):
+        if callbacks is None:
+            callbacks = []
+        self.callbacks = callbacks
 
     def register_accelerator(self, accelerator: accelerate.Accelerator):
         self.accelerator = accelerator
@@ -265,8 +239,16 @@ class TrainerMixin(abc.ABC, ConfigMixin):
     def from_py_config(
         cls,
         config_path: os.PathLike = None,
-        config_module: str = None,
     ):
+        module_name = os.path.splitext(os.path.basename(config_path))[0]
+
+        spec = importlib.util.spec_from_file_location(module_name, config_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        config = {k: v for k, v in module.__dict__.items() if not k.startswith('__')}
+        return cls.from_config(config)
+
         # TODO: 完善从 py 文件读取配置文件的功能.
         # TODO: 太恶心了 我写不动 谁爱用这个功能谁写.
         raise NotImplementedError
@@ -293,6 +275,8 @@ class TrainerMixin(abc.ABC, ConfigMixin):
             return cls.from_yaml_config(config_path)
         if extension in constant.ConfigSuffix.ini:
             return cls.from_ini_config(config_path)
+        if extension in constant.ConfigSuffix.py:
+            return cls.from_py_config(config_path)
         raise NotImplementedError(
             f"Unknown suffix '{extension}' in path '{config_path}'."
         )
@@ -306,19 +290,25 @@ class TrainerMixin(abc.ABC, ConfigMixin):
         logger.info(f"Warm up for epoch={self.flag.epoch} and step={self.flag.step}.")
         if self.flag.step == 0 and self.flag.epoch == 0:
             return self
-        _step = 0
-        _epoch = 0
-        while True:
-            for _ in self.dataset_manager.training_dataloader:
-                _step += 1
-                if _step == self.flag.step:
-                    if _epoch == self.flag.epoch:
-                        return self
-                    else:
-                        raise RuntimeError(
-                            "`current_epoch` and `current_step` mismatch."
-                        )
-            _epoch += 1
+        # _step = 0
+        # _epoch = 0
+        # while True:
+        #     for _ in self.dataset_manager.training_dataloader:
+        #         _step += 1
+        #         if _step == self.flag.step:
+        #             if _epoch == self.flag.epoch:
+        #                 return self
+        #             else:
+        #                 raise RuntimeError(
+        #                     "`current_epoch` and `current_step` mismatch."
+        #                 )
+        #     _epoch += 1
+
+        expect_epoch = self.flag.step // len(self.dataset_manager.training_dataloader)
+        if expect_epoch != self.flag.epoch:
+            raise RuntimeError("`current_epoch` and `current_step` mismatch.")
+
+        return self
 
 
 def register_to_run_one_epoch(only_training: bool = False):
@@ -327,29 +317,43 @@ def register_to_run_one_epoch(only_training: bool = False):
 
         @functools.wraps(one_epoch_func)
         def run_one_epoch(self: TrainerMixin, *args, **kwargs):
-            result = one_epoch_func(*args, **kwargs)
+
             self.flag.epoch += 1
+
+            for callback in self.callbacks:
+                callback.on_train_epoch_begin()
+
+            result = one_epoch_func(*args, **kwargs)
+
+            for callback in self.callbacks:
+                callback.on_train_epoch_end()
 
             if only_training:
                 return result
 
             self.auto_set_to_eval_mode()
 
-            if self.training_config.checkpointing_epoches is not None:
-                if self.flag.epoch % self.training_config.checkpointing_epoches == 0:
-                    self._save_checkpoint()
+            for callback in self.callbacks:
+                callback.on_eval_epoch_begin()
 
-            if self.training_config.saving_epoches is not None:
-                if self.flag.epoch % self.training_config.saving_epoches == 0:
-                    self._save_training_status()
+            # if self.training_config.checkpointing_epoches is not None:
+            #     if self.flag.epoch % self.training_config.checkpointing_epoches == 0:
+            #         self._save_checkpoint()
 
-            if self.training_config.validation_epoches is not None:
-                if self.flag.epoch % self.training_config.validation_epoches == 0:
-                    self._validation()
+            # if self.training_config.saving_epoches is not None:
+            #     if self.flag.epoch % self.training_config.saving_epoches == 0:
+            #         self._save_training_status()
 
-            if self.training_config.watching_epoches is not None:
-                if self.flag.epoch % self.training_config.watching_epoches == 0:
-                    self._watching()
+            # if self.training_config.validation_epoches is not None:
+            #     if self.flag.epoch % self.training_config.validation_epoches == 0:
+            #         self._validation()
+
+            # if self.training_config.watching_epoches is not None:
+            #     if self.flag.epoch % self.training_config.watching_epoches == 0:
+            #         self._watching()
+
+            for callback in self.callbacks:
+                callback.on_eval_epoch_end()
 
             self.auto_set_to_train_mode()
 
@@ -366,29 +370,43 @@ def register_to_run_one_iteration(only_training: bool = False):
 
         @functools.wraps(one_iteration_func)
         def run_one_iteration(self: TrainerMixin, *args, **kwargs):
-            result = one_iteration_func(*args, **kwargs)
+
             self.flag.step += 1
+
+            for callback in self.callbacks:
+                callback.on_train_step_begin()
+
+            result = one_iteration_func(*args, **kwargs)
+
+            for callback in self.callbacks:
+                callback.on_train_step_end()
 
             if only_training:
                 return result
 
             self.auto_set_to_eval_mode()
 
-            if self.training_config.checkpointing_steps is not None:
-                if self.flag.step % self.training_config.checkpointing_steps == 0:
-                    self._save_checkpoint()
+            for callback in self.callbacks:
+                callback.on_eval_step_begin()
 
-            if self.training_config.saving_steps is not None:
-                if self.flag.step % self.training_config.saving_steps == 0:
-                    self._save_training_status()
+            # if self.training_config.checkpointing_steps is not None:
+            #     if self.flag.step % self.training_config.checkpointing_steps == 0:
+            #         self._save_checkpoint()
 
-            if self.training_config.validation_steps is not None:
-                if self.flag.step % self.training_config.validation_steps == 0:
-                    self._validation()
+            # if self.training_config.saving_steps is not None:
+            #     if self.flag.step % self.training_config.saving_steps == 0:
+            #         self._save_training_status()
 
-            if self.training_config.watching_steps is not None:
-                if self.flag.step % self.training_config.watching_steps == 0:
-                    self._watching()
+            # if self.training_config.validation_steps is not None:
+            #     if self.flag.step % self.training_config.validation_steps == 0:
+            #         self._validation()
+
+            # if self.training_config.watching_steps is not None:
+            #     if self.flag.step % self.training_config.watching_steps == 0:
+            #         self._watching()
+
+            for callback in self.callbacks:
+                callback.on_eval_step_end()
 
             self.auto_set_to_train_mode()
 

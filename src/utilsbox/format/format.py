@@ -35,6 +35,19 @@ def format_number(num: int, base: int = 1000):
     return f'{prefix}{num:.4f} T'
 
 
+def format_time_invterval(t: float):
+    if t <= 60:
+        return f'{t: .4f} seconds'
+    t /= 60
+    if t <= 60:
+        return f'{t: .4f} minutes'
+    t /= 60
+    if t <= 24:
+        return f'{t: .4f} hours'
+    t /= 24
+    return f'{t: .4f} days'
+
+
 def format_time(time_time: Optional[float] = None, pattern: str = '%Y%m%d-%H%M%S'):
     if time_time is None:
         time_time = time.time()
