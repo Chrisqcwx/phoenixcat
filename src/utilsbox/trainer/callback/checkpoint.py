@@ -6,7 +6,7 @@ import torch
 from diffusers.configuration_utils import register_to_config
 
 from .base import CallbackMixin, register_callback
-from ..base import TrainerMixin
+from ..trainer_utils import TrainerMixin
 from ..constant import TRAINER_STATUS_NAME
 
 

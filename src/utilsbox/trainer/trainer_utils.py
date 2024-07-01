@@ -136,6 +136,11 @@ class TrainerMixin(abc.ABC, ConfigMixin):
             callbacks = []
         self.callbacks = callbacks
 
+    def add_callbacks(self, callbacks):
+        if callbacks is None:
+            callbacks = []
+        self.callbacks.extend(callbacks)
+
     def register_accelerator(self, accelerator: accelerate.Accelerator):
         self.accelerator = accelerator
 
