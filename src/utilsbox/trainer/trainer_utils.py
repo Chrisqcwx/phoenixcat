@@ -207,22 +207,24 @@ class TrainerMixin(abc.ABC, ConfigMixin):
     def __init__(
         self,
         output_dir: str | os.PathLike,
+        models: Dict[AnyStr, TrainModelManager],
+        training_config: TrainingConfig,
+        dataset_manager: TrainingDatasetManager,
         seed: int = 0,
+        accerator: accelerate.Accelerator | None = None,
     ) -> None:
         super().__init__()
         self._set_seed(seed)
         self.output_dir = output_dir
-        self.register_accelerator(None)
+        self.register_accelerator(accerator)
         self.callbacks = []
 
         self.flag = TrainingFlag()
-        self.dataset_manager = TrainingDatasetManager()
+        self.dataset_manager = dataset_manager
 
-        self.training_config = TrainingConfig()
+        self.training_config = training_config
 
-        self.models: Dict[AnyStr, TrainModelManager] = {}
-
-        self.accelerator: accelerate.Accelerator | None = None
+        self.models: Dict[AnyStr, TrainModelManager] = models
 
         self.train_temp_values = TrainTempValues()
 
