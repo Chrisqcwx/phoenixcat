@@ -4,7 +4,7 @@ import logging
 from diffusers.configuration_utils import register_to_config
 
 from .base import CallbackMixin, register_callback
-from ..base import TrainerMixin
+from ..trainer_utils import TrainerMixin
 from ...format import format_time_invterval
 
 logger = logging.getLogger(__name__)

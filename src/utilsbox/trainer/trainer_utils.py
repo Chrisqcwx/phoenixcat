@@ -1,11 +1,12 @@
 import abc
+import json
 import datetime
 import functools
 import logging
 import os
 import importlib
 from dataclasses import dataclass, field
-from typing import Dict, AnyStr
+from typing import Dict, AnyStr, Any
 
 import accelerate
 
@@ -13,13 +14,16 @@ import accelerate
 import torch
 import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
+from diffusers.optimization import get_scheduler
 
 from . import constant
 from ..logger.logging import init_logger
 from ..random._seeds import seed_every_thing
 from ..decorators import Register
 from ..configuration import ConfigMixin, auto_cls_from_pretrained
-from ..models import ModelMixin
+from ..models import ModelMixin, auto_model_from_pretrained
+from ..conversion import get_obj_from_str
+from ..files.save import safe_save_as_json, safe_save_torchobj
 
 logger = logging.getLogger(__name__)
 
@@ -80,11 +84,113 @@ class TrainingDatasetManager:
     validation_dataloader: torch.utils.data.DataLoader = None
 
 
-@dataclass
+# @dataclass
 class TrainModelManager:
     model: ModelMixin
     optimizer: torch.optim.Optimizer
     lr_scheduler: torch.optim.lr_scheduler.LRScheduler | None = None
+
+    optimizer_config_name = 'optimizer.json'
+    optimizer_state_dict_name = 'optimizer.bin'
+    lr_scheduler_config_name = 'lr_scheduler.json'
+    lr_scheduler_state_dict_name = 'lr_scheduler.bin'
+
+    def __init__(
+        self,
+        model: ModelMixin,
+        optimizer_name: torch.optim.Optimizer,
+        optimizer_kwargs: Dict[AnyStr, Any],
+        lr_scheduler_name: torch.optim.lr_scheduler.LRScheduler | None = None,
+        lr_scheduler_kwargs: Dict[AnyStr, Any] | None = None,
+    ) -> None:
+        # torch.optim.Adam()
+        self.model = model
+        self.optimizer_name = optimizer_name
+        self.optimizer_kwargs = optimizer_kwargs
+        self.lr_scheduler_name = lr_scheduler_name
+        self.lr_scheduler_kwargs = lr_scheduler_kwargs
+
+        optimizer_cls = get_obj_from_str(f'torch.optim.{optimizer_name}')
+        if optimizer_cls is not None:
+            raise RuntimeError(f'`optimizer_name` cannot be found in torch.optim')
+        self.optimizer = optimizer_cls(self.model.parameters(), **optimizer_kwargs)
+
+        if lr_scheduler_name is not None:
+            lr_scheduler_cls = get_obj_from_str(
+                f'torch.optim.lr_scheduler.{lr_scheduler_name}'
+            )
+            if lr_scheduler_cls is None:
+                try:
+                    self.lr_scheduler = get_scheduler(
+                        lr_scheduler_name, self.optimizer, **lr_scheduler_kwargs
+                    )
+                except:
+                    raise RuntimeError(
+                        f'`optimizer_name` cannot be found in torch.optim.lr_scheduler or diffusers.optimization.get_scheduler'
+                    )
+            else:
+                self.lr_scheduler = lr_scheduler_cls(
+                    self.optimizer, **lr_scheduler_kwargs
+                )
+
+    def save_pretrained(self, save_directory: str):
+        self.model.save_pretrained(save_directory)
+        safe_save_as_json(
+            {'name': self.optimizer_name, 'kwargs': self.optimizer_kwargs},
+            os.path.join(save_directory, self.optimizer_config_name),
+        )
+        safe_save_torchobj(self.optimizer.state_dict(), self.optimizer_state_dict_name)
+        if self.lr_scheduler is not None:
+            safe_save_as_json(
+                {'name': self.lr_scheduler_name, 'kwargs': self.lr_scheduler_kwargs},
+                os.path.join(save_directory, self.lr_scheduler_config_name),
+            )
+            safe_save_torchobj(
+                self.lr_scheduler.state_dict(), self.lr_scheduler_state_dict_name
+            )
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_path, dtype=None, device=None):
+        model = auto_model_from_pretrained(pretrained_model_path)
+        if dtype is not None:
+            model = model.to(dtype)
+        if device is not None:
+            model = model.to(device)
+
+        with open(os.path.join(pretrained_model_path, cls.optimizer_config_name)) as f:
+            optimizer_config = json.load(f)
+
+        lr_scheduler_path = os.path.join(
+            pretrained_model_path, cls.lr_scheduler_config_name
+        )
+        if os.path.exists(lr_scheduler_path):
+            with open(lr_scheduler_path) as f:
+                lr_scheduler_config = json.load(f)
+        else:
+            lr_scheduler_config = {'name': None, 'kwargs': None}
+
+        self = cls(
+            model=model,
+            optimizer_name=optimizer_config['name'],
+            optimizer_kwargs=optimizer_config['kwargs'],
+            lr_scheduler_name=lr_scheduler_config['name'],
+            lr_scheduler_kwargs=lr_scheduler_config['kwargs'],
+        )
+
+        self._load_state_dict(
+            self.optimizer,
+            os.path.join(pretrained_model_path, self.optimizer_state_dict_name),
+        )
+        if self.lr_scheduler is not None:
+            self._load_state_dict(
+                self.lr_scheduler,
+                os.path.join(pretrained_model_path, self.lr_scheduler_state_dict_name),
+            )
+
+    def _load_state_dict(self, dst, path):
+        device = next(self.model.parameters()).device
+        state_dict = torch.load(path, map_location=device)
+        dst.load_state_dict(state_dict)
 
 
 @dataclass

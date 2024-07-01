@@ -4,7 +4,7 @@ import torch
 import numpy as np
 from diffusers.configuration_utils import register_to_config
 
-from ..base import TrainerMixin
+from ..trainer_utils import TrainerMixin
 from .base import CallbackMixin, register_callback
 
 logger = logging.getLogger(__name__)

@@ -6,7 +6,7 @@ import torch
 from diffusers.configuration_utils import register_to_config
 
 from .base import CallbackMixin, register_callback
-from ..base import TrainerMixin
+from ..trainer_utils import TrainerMixin
 from ..constant import TRAINER_STATUS_NAME
 
 
@@ -32,15 +32,16 @@ class CheckpointCallbackMixin(CallbackMixin):
         pass
 
     def _step_end(self, trainer: TrainerMixin):
-        if trainer.flag.step % self.interval == 0:
+        if trainer.is_local_main_process and trainer.flag.step % self.interval == 0:
             self.save_checkpoint(trainer)
 
     def _epoch_end(self, trainer: TrainerMixin):
-        if trainer.flag.epoch % self.interval == 0:
+        if trainer.is_local_main_process and trainer.flag.epoch % self.interval == 0:
             self.save_checkpoint(trainer)
 
     def on_train_end(self, trainer: TrainerMixin):
-        self.save_checkpoint(trainer)
+        if trainer.is_local_main_process:
+            self.save_checkpoint(trainer)
 
 
 @register_callback

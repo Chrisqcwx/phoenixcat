@@ -3,7 +3,7 @@ from typing import Dict, List, Any, Literal
 
 from diffusers.configuration_utils import register_to_config
 
-from ..base import TrainerMixin
+from ..trainer_utils import TrainerMixin
 from ...decorators import Register
 from ...configuration import ConfigMixin, extract_init_dict, auto_cls_from_pretrained
 
