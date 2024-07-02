@@ -98,48 +98,62 @@ class TrainModelManager:
     def __init__(
         self,
         model: ModelMixin,
-        optimizer_name: torch.optim.Optimizer,
-        optimizer_kwargs: Dict[AnyStr, Any],
+        optimizer_name: torch.optim.Optimizer = None,
+        optimizer_kwargs: Dict[AnyStr, Any] = None,
         lr_scheduler_name: torch.optim.lr_scheduler.LRScheduler | None = None,
         lr_scheduler_kwargs: Dict[AnyStr, Any] | None = None,
     ) -> None:
-        # torch.optim.Adam()
+
+        optimizer_kwargs = {} if optimizer_kwargs is None else optimizer_kwargs
+        lr_scheduler_kwargs = {} if lr_scheduler_kwargs is None else lr_scheduler_kwargs
+
         self.model = model
         self.optimizer_name = optimizer_name
         self.optimizer_kwargs = optimizer_kwargs
         self.lr_scheduler_name = lr_scheduler_name
         self.lr_scheduler_kwargs = lr_scheduler_kwargs
 
-        optimizer_cls = get_obj_from_str(f'torch.optim.{optimizer_name}')
-        if optimizer_cls is not None:
-            raise RuntimeError(f'`optimizer_name` cannot be found in torch.optim')
-        self.optimizer = optimizer_cls(self.model.parameters(), **optimizer_kwargs)
+        if optimizer_name is not None:
 
-        if lr_scheduler_name is not None:
-            lr_scheduler_cls = get_obj_from_str(
-                f'torch.optim.lr_scheduler.{lr_scheduler_name}'
-            )
-            if lr_scheduler_cls is None:
-                try:
-                    self.lr_scheduler = get_scheduler(
-                        lr_scheduler_name, self.optimizer, **lr_scheduler_kwargs
-                    )
-                except:
-                    raise RuntimeError(
-                        f'`optimizer_name` cannot be found in torch.optim.lr_scheduler or diffusers.optimization.get_scheduler'
-                    )
-            else:
-                self.lr_scheduler = lr_scheduler_cls(
-                    self.optimizer, **lr_scheduler_kwargs
+            optimizer_cls = get_obj_from_str(f'torch.optim.{optimizer_name}')
+            if optimizer_cls is not None:
+                raise RuntimeError(f'`optimizer_name` cannot be found in torch.optim')
+            self.optimizer = optimizer_cls(self.model.parameters(), **optimizer_kwargs)
+
+            if lr_scheduler_name is not None:
+                lr_scheduler_cls = get_obj_from_str(
+                    f'torch.optim.lr_scheduler.{lr_scheduler_name}'
                 )
+                if lr_scheduler_cls is None:
+                    try:
+                        self.lr_scheduler = get_scheduler(
+                            lr_scheduler_name, self.optimizer, **lr_scheduler_kwargs
+                        )
+                    except:
+                        raise RuntimeError(
+                            f'`optimizer_name` cannot be found in torch.optim.lr_scheduler or diffusers.optimization.get_scheduler'
+                        )
+                else:
+                    self.lr_scheduler = lr_scheduler_cls(
+                        self.optimizer, **lr_scheduler_kwargs
+                    )
+
+    @property
+    def is_trainable(self):
+        return self.optimizer is not None
 
     def save_pretrained(self, save_directory: str):
         self.model.save_pretrained(save_directory)
-        safe_save_as_json(
-            {'name': self.optimizer_name, 'kwargs': self.optimizer_kwargs},
-            os.path.join(save_directory, self.optimizer_config_name),
-        )
-        safe_save_torchobj(self.optimizer.state_dict(), self.optimizer_state_dict_name)
+
+        if self.optimizer is not None:
+            safe_save_as_json(
+                {'name': self.optimizer_name, 'kwargs': self.optimizer_kwargs},
+                os.path.join(save_directory, self.optimizer_config_name),
+            )
+            safe_save_torchobj(
+                self.optimizer.state_dict(), self.optimizer_state_dict_name
+            )
+
         if self.lr_scheduler is not None:
             safe_save_as_json(
                 {'name': self.lr_scheduler_name, 'kwargs': self.lr_scheduler_kwargs},
@@ -150,20 +164,26 @@ class TrainModelManager:
             )
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_path, dtype=None, device=None):
+    def from_pretrained(
+        cls, pretrained_model_path, dtype=None, device=None, train=True
+    ):
         model = auto_model_from_pretrained(pretrained_model_path)
         if dtype is not None:
             model = model.to(dtype)
         if device is not None:
             model = model.to(device)
 
-        with open(os.path.join(pretrained_model_path, cls.optimizer_config_name)) as f:
-            optimizer_config = json.load(f)
+        optimizer_path = os.path.join(pretrained_model_path, cls.optimizer_config_name)
+        if train and os.path.exists(optimizer_path):
+            with open(optimizer_path) as f:
+                optimizer_config = json.load(f)
+        else:
+            optimizer_config = {'name': None, 'kwargs': None}
 
         lr_scheduler_path = os.path.join(
             pretrained_model_path, cls.lr_scheduler_config_name
         )
-        if os.path.exists(lr_scheduler_path):
+        if train and os.path.exists(lr_scheduler_path):
             with open(lr_scheduler_path) as f:
                 lr_scheduler_config = json.load(f)
         else:
@@ -207,7 +227,7 @@ class TrainerMixin(abc.ABC, ConfigMixin):
     def __init__(
         self,
         output_dir: str | os.PathLike,
-        models: Dict[AnyStr, TrainModelManager],
+        model_managers: Dict[AnyStr, TrainModelManager],
         training_config: TrainingConfig,
         dataset_manager: TrainingDatasetManager,
         seed: int = 0,
@@ -224,9 +244,16 @@ class TrainerMixin(abc.ABC, ConfigMixin):
 
         self.training_config = training_config
 
-        self.models: Dict[AnyStr, TrainModelManager] = models
+        self.model_managers: Dict[AnyStr, TrainModelManager] = model_managers
 
         self.train_temp_values = TrainTempValues()
+
+        self.auto_set_to_eval_mode()
+        self.auto_set_to_train_mode()
+
+    @property
+    def training(self):
+        return self._training
 
     def _set_seed(self, seed: int):
         self.seed = seed
@@ -261,21 +288,39 @@ class TrainerMixin(abc.ABC, ConfigMixin):
     def auto_init(self, reload: bool = False):
         raise NotImplementedError("Please implement the `auto_init` method.")
 
-    @abc.abstractmethod
+    # @abc.abstractmethod
     def auto_set_to_train_mode(self):
-        raise NotImplementedError(
-            "Please implement the `auto_set_to_train_mode` method."
-        )
+        self._training = True
+        for model_manager in self.model_managers.values():
+            if model_manager.is_trainable:
+                model_manager.model.train()
+        # raise NotImplementedError(
+        #     "Please implement the `auto_set_to_train_mode` method."
+        # )
 
-    @abc.abstractmethod
+    # @abc.abstractmethod
     def auto_set_to_eval_mode(self):
-        raise NotImplementedError(
-            "Please implement the `auto_set_to_eval_mode` method."
-        )
+        self._training = False
+        for model_manager in self.model_managers.values():
+            model_manager.model.eval()
+        # raise NotImplementedError(
+        #     "Please implement the `auto_set_to_eval_mode` method."
+        # )
 
-    @abc.abstractmethod
+    # @abc.abstractmethod
     def auto_save_checkpoint(self):
-        raise NotImplementedError("Please implement the `auto_save_checkpoint` method.")
+        # raise NotImplementedError("Please implement the `auto_save_checkpoint` method.")
+        save_dir = os.path.join(
+            self.output_dir,
+            'checkpoints',
+            f'{self.flag.epoch}_{self.flag.step}',
+        )
+        for name, model_manager in self.model_managers.items():
+            save_path = os.path.join(save_dir, name)
+            os.makedirs(save_path, exist_ok=True)
+            model_manager.model.save_pretrained(
+                save_path, is_main_process=self.is_local_main_process
+            )
 
     @abc.abstractmethod
     def auto_save_training_status(self):
