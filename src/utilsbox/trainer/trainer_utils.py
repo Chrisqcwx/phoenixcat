@@ -20,7 +20,11 @@ from . import constant
 from ..logger.logging import init_logger
 from ..random._seeds import seed_every_thing
 from ..decorators import Register
-from ..configuration import ConfigMixin, auto_cls_from_pretrained
+from ..configuration import (
+    ConfigMixin,
+    auto_cls_from_pretrained,
+    config_dataclass_wrapper,
+)
 from ..models import ModelMixin, auto_model_from_pretrained
 from ..conversion import get_obj_from_str
 from ..files.save import safe_save_as_json, safe_save_torchobj
@@ -41,6 +45,7 @@ def get_trainer_builder(name: str):
     return _trainer_register[name]
 
 
+@config_dataclass_wrapper(config_name='train_outputfiles.json')
 @dataclass
 class TrainingOutputFilesManager:
     logging_file: str | os.PathLike = "training.log"
