@@ -6,7 +6,7 @@ import logging
 import os
 import importlib
 from dataclasses import dataclass, field
-from typing import Dict, AnyStr, Any
+from typing import Dict, AnyStr, Any, Literal
 
 import accelerate
 
@@ -89,7 +89,28 @@ class TrainingDatasetManager:
     validation_dataloader: torch.utils.data.DataLoader = None
 
 
-# @dataclass
+def _get_torch_lr_scheduler(optimizer, name, kwargs):
+    lr_scheduler_cls = get_obj_from_str(f'torch.optim.lr_scheduler.{name}')
+    if lr_scheduler_cls is None:
+        return None
+    return lr_scheduler_cls(optimizer, **kwargs)
+
+
+def _get_diffusers_lr_scheduler(optimizer, name, kwargs):
+    try:
+        lr_scheduler = get_scheduler(name, optimizer, **kwargs)
+    except:
+        return None
+
+    return lr_scheduler
+
+
+LR_SCHEDULER_SOURCE = {
+    'torch': _get_torch_lr_scheduler,
+    'diffusers': _get_diffusers_lr_scheduler,
+}
+
+
 class TrainModelManager:
     model: ModelMixin
     optimizer: torch.optim.Optimizer
@@ -103,10 +124,11 @@ class TrainModelManager:
     def __init__(
         self,
         model: ModelMixin,
-        optimizer_name: torch.optim.Optimizer = None,
+        optimizer_name: str | None = None,
         optimizer_kwargs: Dict[AnyStr, Any] = None,
-        lr_scheduler_name: torch.optim.lr_scheduler.LRScheduler | None = None,
+        lr_scheduler_name: str | None = None,
         lr_scheduler_kwargs: Dict[AnyStr, Any] | None = None,
+        lr_scheduler_source: Literal[None, 'diffusers', 'torch'] = None,
     ) -> None:
 
         optimizer_kwargs = {} if optimizer_kwargs is None else optimizer_kwargs
@@ -118,30 +140,38 @@ class TrainModelManager:
         self.lr_scheduler_name = lr_scheduler_name
         self.lr_scheduler_kwargs = lr_scheduler_kwargs
 
-        if optimizer_name is not None:
+        if optimizer_name is None:
+            return
 
-            optimizer_cls = get_obj_from_str(f'torch.optim.{optimizer_name}')
-            if optimizer_cls is not None:
-                raise RuntimeError(f'`optimizer_name` cannot be found in torch.optim')
-            self.optimizer = optimizer_cls(self.model.parameters(), **optimizer_kwargs)
+        optimizer_cls = get_obj_from_str(f'torch.optim.{optimizer_name}')
+        if optimizer_cls is not None:
+            raise RuntimeError(f'`optimizer_name` cannot be found in torch.optim')
+        self.optimizer = optimizer_cls(self.model.parameters(), **optimizer_kwargs)
 
-            if lr_scheduler_name is not None:
-                lr_scheduler_cls = get_obj_from_str(
-                    f'torch.optim.lr_scheduler.{lr_scheduler_name}'
+        if lr_scheduler_name is None:
+            return
+
+        if lr_scheduler_source is None:
+            search_sources = LR_SCHEDULER_SOURCE.keys()
+        else:
+            if lr_scheduler_source not in LR_SCHEDULER_SOURCE:
+                repr_str = ', '.join(list(LR_SCHEDULER_SOURCE.keys()))
+                raise RuntimeError(
+                    f'`lr_scheduler_source` should be in {repr_str}, but found {lr_scheduler_source}'
                 )
-                if lr_scheduler_cls is None:
-                    try:
-                        self.lr_scheduler = get_scheduler(
-                            lr_scheduler_name, self.optimizer, **lr_scheduler_kwargs
-                        )
-                    except:
-                        raise RuntimeError(
-                            f'`optimizer_name` cannot be found in torch.optim.lr_scheduler or diffusers.optimization.get_scheduler'
-                        )
-                else:
-                    self.lr_scheduler = lr_scheduler_cls(
-                        self.optimizer, **lr_scheduler_kwargs
-                    )
+            search_sources = [lr_scheduler_source]
+
+        for source in search_sources:
+            lr_scheduler = LR_SCHEDULER_SOURCE[source](
+                self.optimizer, lr_scheduler_name, lr_scheduler_kwargs
+            )
+            if lr_scheduler is not None:
+                self.lr_scheduler = lr_scheduler
+                self.lr_scheduler_source = source
+                break
+        else:
+            repr_str = ', '.join(list(LR_SCHEDULER_SOURCE.keys()))
+            raise RuntimeError(f'`optimizer_name` cannot be found in [{repr_str}]')
 
     @property
     def is_trainable(self):
@@ -161,7 +191,11 @@ class TrainModelManager:
 
         if self.lr_scheduler is not None:
             safe_save_as_json(
-                {'name': self.lr_scheduler_name, 'kwargs': self.lr_scheduler_kwargs},
+                {
+                    'name': self.lr_scheduler_name,
+                    'kwargs': self.lr_scheduler_kwargs,
+                    'source': self.lr_scheduler_source,
+                },
                 os.path.join(save_directory, self.lr_scheduler_config_name),
             )
             safe_save_torchobj(
@@ -196,10 +230,11 @@ class TrainModelManager:
 
         self = cls(
             model=model,
-            optimizer_name=optimizer_config['name'],
-            optimizer_kwargs=optimizer_config['kwargs'],
-            lr_scheduler_name=lr_scheduler_config['name'],
-            lr_scheduler_kwargs=lr_scheduler_config['kwargs'],
+            optimizer_name=optimizer_config.get('name', None),
+            optimizer_kwargs=optimizer_config.get('kwargs', None),
+            lr_scheduler_name=lr_scheduler_config.get('name', None),
+            lr_scheduler_kwargs=lr_scheduler_config.get('kwargs', None),
+            lr_scheduler_source=lr_scheduler_config.get('lr_scheduler_source', None),
         )
 
         self._load_state_dict(
