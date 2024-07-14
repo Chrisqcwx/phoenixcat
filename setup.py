@@ -1,7 +1,11 @@
+import os
 from setuptools import setup, find_packages
+from src.utilsbox import add_welcome_msg
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
+
+add_welcome_msg(os.getlogin(), 'Gook luck!')
 
 setup(
     name='utilsbox',
