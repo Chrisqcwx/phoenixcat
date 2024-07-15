@@ -161,5 +161,7 @@ cython_debug/
 
 test/
 .vscode/
-data/
+/data/
 .download/
+.temp/
+*.nii

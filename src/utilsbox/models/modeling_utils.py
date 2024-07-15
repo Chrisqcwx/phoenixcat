@@ -37,7 +37,7 @@ if is_accelerate_available():
 
 from utilsbox.decorators import Register
 
-from diffusers.configuration_utils import ConfigMixin
+from ..configuration import ConfigMixin, auto_cls_from_pretrained
 
 logger = logging.get_logger(__name__)
 
@@ -540,17 +540,4 @@ class ModelMixin(HF_ModelMixin, ConfigMixin):
 
 def auto_model_from_pretrained(path: str, **kwargs):
 
-    config = ModelMixin.load_config(path)
-    if isinstance(config, tuple):
-        config = config[0]
-
-    cls_name = config.get('_class_name', None)
-    if cls_name is None:
-        raise RuntimeError('`_class_name` is not contained in config.')
-
-    try:
-        clss = _model_register[cls_name]
-    except:
-        raise RuntimeError(f'_class_name `{cls_name}` has not been registered.')
-
-    return clss.from_pretrained(path, **kwargs)
+    return auto_cls_from_pretrained(_model_register, ModelMixin, path, **kwargs)

@@ -1,10 +1,12 @@
 import logging
+import functools
 from typing import Callable, Optional
 
 import torch
 from tqdm import tqdm
 
 from ..format.format import format_as_split_line
+from diffusers.utils.outputs import BaseOutput
 
 
 def _is_namedtuple(obj):
@@ -28,6 +30,10 @@ def _gather(outputs, dim=0):
             return torch.cat(outputs, dim=dim)
         if out is None:
             return None
+        if isinstance(out, (list, tuple)) and isinstance(out[0], str):
+            return list(functools.reduce(lambda x, y: x + y, outputs))
+        if isinstance(out, BaseOutput):
+            return type(out)(*gather_map([d.to_tuple() for d in outputs]))
         if isinstance(out, dict):
             if not all(len(out) == len(d) for d in outputs):
                 raise ValueError('All dicts must have the same number of keys')
