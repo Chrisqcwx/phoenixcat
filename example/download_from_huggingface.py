@@ -1,5 +1,5 @@
-from utilsbox.download.hugging_face.api_download import download_from_huggingface
-from utilsbox.logger.logging import init_logger
+from phoenixcat.download.hugging_face.api_download import download_from_huggingface
+from phoenixcat.logger.logging import init_logger
 
 init_logger("dowanload_from_huggingface.log")
 

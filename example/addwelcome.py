@@ -1,6 +1,6 @@
 import os
-import utilsbox
+import phoenixcat
 
 print('>> add welcome')
 
-utilsbox.add_welcome_msgs(os.getlogin(), 'Gook luck!')
+phoenixcat.add_welcome_msgs(os.getlogin(), 'Gook luck!')
