@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Dict
 
 import torch.distributed
 from torch.utils.data import Dataset, DataLoader
@@ -17,15 +18,15 @@ class DataLoaderConfig:
 def getDataLoader(
     dataset: Dataset,
     batch_size: int,
-    config: DataLoaderConfig,
+    config: Dict,
     shuffle: bool = True,
     seed: int = 0,
     use_ddp: bool = False,
-    device: str = "cuda",
+    device: str = "",
 ):
     if use_ddp:
         sampler = DistributedSampler(
-            dataset=dataset, shuffle=shuffle, seed=seed, drop_last=config.drop_last
+            dataset=dataset, shuffle=shuffle, seed=seed, drop_last=config.get("drop_last", False)
         )
         shuffle = False
         rank = torch.distributed.get_rank()
@@ -38,11 +39,11 @@ def getDataLoader(
         batch_size=batch_size,
         shuffle=shuffle,
         sampler=sampler,
-        num_workers=config.num_workers,
-        pin_memory=config.pin_memory,
-        drop_last=config.drop_last,
-        prefetch_factor=config.prefetch_factor,
-        presistent_workers=config.presistent_workers,
+        num_workers=config.get("num_workers", 0),
+        pin_memory=config.get("pin_memory", False),
+        drop_last=config.get("drop_last", False),
+        prefetch_factor=config.get("prefetch_factor", None),
+        persistent_workers=config.get("presistent_workers", False),
         pin_memory_device=device,
     )
 

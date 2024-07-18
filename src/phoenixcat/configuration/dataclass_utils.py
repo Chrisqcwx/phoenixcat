@@ -1,5 +1,6 @@
 import os
 import json
+from typing import get_args
 
 from ..files.save import safe_save_as_json
 
@@ -32,3 +33,17 @@ def config_dataclass_wrapper(config_name='config.json'):
         return cls
 
     return _inner_wrapper
+
+
+def dict2dataclass(_data, _class):
+    if isinstance(_data, dict):
+        fieldtypes = {f.name: f.type for f in _class.__dataclass_fields__.values()}
+        return _class(**{f: dict2dataclass(_data.get(f), fieldtypes[f]) for f in fieldtypes})
+    elif isinstance(_data, list):
+        if hasattr(_class, '__origin__') and _class.__origin__ == list:
+            elem_type = get_args(_class)[0]
+            return [dict2dataclass(d, elem_type) for d in _data]
+        else:
+            raise TypeError("Expected a list type annotation.")
+    else:
+        return _data

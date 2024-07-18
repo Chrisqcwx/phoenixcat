@@ -1,5 +1,9 @@
-from accelerate import Accelerator
+import dataclasses
 
-accelerator = Accelerator()
+import accelerate
 
-device = accelerator.device
+accelerate.Accelerator()
+
+@dataclasses.dataclass
+class AcceleratorConfig:
+    pass

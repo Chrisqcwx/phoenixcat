@@ -35,7 +35,7 @@ if is_accelerate_available():
     from accelerate.utils import set_module_tensor_to_device
     from accelerate.utils.versions import is_torch_version
 
-from phoenixcat.decorators import Register
+from utilsbox.decorators import Register
 
 from ..configuration import ConfigMixin, auto_cls_from_pretrained
 
