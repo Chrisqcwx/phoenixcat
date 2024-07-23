@@ -17,6 +17,12 @@ class Register(dict):
         logger.info(f'Create register {name}')
         _BUILDIN_REGISTERS[name] = self
 
+        self._name = name
+
+    @property
+    def name(self):
+        return self._name
+
     def register(self, name: Optional[str] = None):
 
         def _inner_register(fn):
