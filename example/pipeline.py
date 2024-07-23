@@ -9,7 +9,7 @@ from phoenixcat.logger.logging import init_logger
 from phoenixcat.random import seed_every_thing
 
 from phoenixcat.trainer.trainer_utils import TrainingOutputFilesManager
-from phoenixcat.configuration import PipelineMixin
+from phoenixcat.configuration import PipelineMixin, register_to_pipeline_init
 
 init_logger("pipeline.log")
 
@@ -44,13 +44,14 @@ class VGG16_64(BaseImageClassifier):
 
 class TestPipeline(PipelineMixin):
 
+    @register_to_pipeline_init
     def __init__(self, model, manager, scheduler, a_constant):
 
         super().__init__()
         self.manager = manager
 
-        self.register_modules(model=model, manager=manager, scheduler=scheduler)
-        self.register_constants(a_constant=a_constant)
+        # self.register_modules(model=model, manager=manager, scheduler=scheduler)
+        # self.register_constants(a_constant=a_constant)
         # self.register_to_config()
 
 
