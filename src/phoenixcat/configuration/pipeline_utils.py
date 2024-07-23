@@ -1,7 +1,9 @@
 import os
-import logging
-import importlib
+import json
 import functools
+import inspect
+import importlib
+import logging
 
 import diffusers
 from diffusers import DiffusionPipeline
@@ -108,6 +110,75 @@ def _fetch_class_library_tuple(module):
     class_name = not_compiled_module.__class__.__name__
 
     return (library, class_name)
+
+
+def _is_loadable_module(module):
+    if not hasattr(module, '__class__'):
+        return False
+    return module.__class__.__name__ in ALL_IMPORTABLE_CLASSES
+
+
+def is_json_serializable(obj):
+    try:
+        json.dumps(obj)
+        return True
+    except TypeError:
+        return False
+
+
+def register_to_pipeline_init(init):
+    @functools.wraps(init)
+    def inner_init(self, *args, **kwargs):
+
+        # Ignore private kwargs in the init.
+        init_kwargs = {k: v for k, v in kwargs.items() if not k.startswith("_")}
+        config_init_kwargs = {k: v for k, v in kwargs.items() if k.startswith("_")}
+        if not isinstance(self, PipelineMixin):
+            raise RuntimeError(
+                f"`@register_to_pipeline_init` was applied to {self.__class__.__name__} init method, but this class does "
+                "not inherit from `PipelineMixin`."
+            )
+
+        # Get positional arguments aligned with kwargs
+        new_kwargs = {}
+        signature = inspect.signature(init)
+        parameters = {
+            name: p.default
+            for i, (name, p) in enumerate(signature.parameters.items())
+            if i > 0
+        }
+        for arg, name in zip(args, parameters.keys()):
+            new_kwargs[name] = arg
+
+        # Then add all kwargs
+        new_kwargs.update(
+            {
+                k: init_kwargs.get(k, default)
+                for k, default in parameters.items()
+                if k not in new_kwargs
+            }
+        )
+
+        # Take note of the parameters that were not present in the loaded config
+        # if len(set(new_kwargs.keys()) - set(init_kwargs)) > 0:
+        #     new_kwargs["_use_default_values"] = list(
+        #         set(new_kwargs.keys()) - set(init_kwargs)
+        #     )
+
+        new_kwargs = {**config_init_kwargs, **new_kwargs}
+        # getattr(self, "register_to_config")(**new_kwargs)
+        # self.register_to_status(**new_kwargs)
+        init(self, *args, **init_kwargs)
+
+        for name, value in new_kwargs.items():
+            if is_json_serializable(value):
+                self.register_constants(**{name: value})
+                # print(f'>> {name} {value.__class__.__name__}')
+            else:
+                # print(f'>>> {name} {value}')
+                self.register_modules(**{name: value})
+
+    return inner_init
 
 
 class PipelineMixin(DiffusionPipeline):
