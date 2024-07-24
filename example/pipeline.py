@@ -53,13 +53,8 @@ class TestPipeline(PipelineMixin):
         self.register_custom_values(init_constant=777)
         self.register_custom_values(init_module=DDPMScheduler(num_train_timesteps=7))
 
-        # self.register_modules(model=model, manager=manager, scheduler=scheduler)
-        # self.register_constants(a_constant=a_constant)
-        # self.register_to_config()
-
 
 scheduler = DDIMScheduler()
-
 
 pipe = TestPipeline(
     model=VGG16_64(num_classes=10),

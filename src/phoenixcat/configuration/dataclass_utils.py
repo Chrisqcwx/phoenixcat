@@ -10,8 +10,6 @@ def config_dataclass_wrapper(config_name='config.json'):
 
     def _inner_wrapper(cls):
 
-        cls = pipeline_loadable()(cls)
-
         @classmethod
         def from_config(cls, config_or_path: dict | str):
             if not isinstance(config_or_path, dict):
@@ -32,6 +30,8 @@ def config_dataclass_wrapper(config_name='config.json'):
 
         cls.from_config = cls.from_pretrained = from_config
         cls.save_config = cls.save_pretrained = save_config
+
+        cls = pipeline_loadable()(cls)
 
         return cls
 
