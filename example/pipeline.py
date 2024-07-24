@@ -1,6 +1,6 @@
 import torchvision
 from torch import nn, Tensor
-from diffusers import DDIMScheduler
+from diffusers import DDIMScheduler, DDPMScheduler
 from diffusers.configuration_utils import register_to_config
 
 from phoenixcat.models import register_model
@@ -45,10 +45,13 @@ class VGG16_64(BaseImageClassifier):
 class TestPipeline(PipelineMixin):
 
     @register_to_pipeline_init
-    def __init__(self, model, manager, scheduler, a_constant):
+    def __init__(self, model, manager, scheduler, a_constant, no_seri):
 
         super().__init__()
         self.manager = manager
+
+        self.register_custom_values(init_constant=777)
+        self.register_custom_values(init_module=DDPMScheduler(num_train_timesteps=7))
 
         # self.register_modules(model=model, manager=manager, scheduler=scheduler)
         # self.register_constants(a_constant=a_constant)
@@ -57,14 +60,17 @@ class TestPipeline(PipelineMixin):
 
 scheduler = DDIMScheduler()
 
+
 pipe = TestPipeline(
     model=VGG16_64(num_classes=10),
     manager=TrainingOutputFilesManager(),
     scheduler=scheduler,
     a_constant=["mao", 44],
+    no_seri=nn.Identity(),
 )
 
 pipe.save_pretrained('./test_pipe')
 pipe_new = TestPipeline.from_pretrained('./test_pipe')
 
-print(type(pipe_new), pipe_new.a_constant)
+print(type(pipe_new), pipe_new.a_constant, pipe_new.init_constant)
+print(list(pipe_new.__dict__.keys()))

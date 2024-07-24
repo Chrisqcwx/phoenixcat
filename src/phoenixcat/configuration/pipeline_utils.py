@@ -1,10 +1,12 @@
 import os
 import json
+import copy
 import functools
 import inspect
 import importlib
 import logging
 
+import torch
 import diffusers
 from diffusers import DiffusionPipeline
 from diffusers.pipelines.pipeline_loading_utils import (
@@ -42,19 +44,38 @@ def pipeline_loadable(save_method="save_pretrained", load_method="from_pretraine
     return _inner_wrapper
 
 
+def is_json_serializable(obj):
+    try:
+        json.dumps(obj)
+        return True
+    except TypeError:
+        return False
+
+
 @pipeline_loadable()
 class PipelineRecord:
 
     config_name = "pipeline_config.json"
 
     def __init__(self, **kwargs):
-        self._record = kwargs
+        self._constant = {}
+        self._module = {}
+        for name, value in kwargs.items():
+            self.set(name, value)
 
     def set(self, key, value):
-        self._record[key] = value
+        # self._record[key] = value
+        if is_json_serializable(value):
+            self._constant[key] = value
+        else:
+            self._module[key] = value
 
     def get(self, key):
-        return self._record.get(key, None)
+        # return self._record.get(key, None)
+        if key in self._constant:
+            return self._constant[key]
+        else:
+            return self._module.get(key, None)
 
     def __getitem__(self, key):
         return self.get(key)
@@ -63,22 +84,36 @@ class PipelineRecord:
         self.set(key, value)
 
     @classmethod
-    def from_pretrained(cls, config_or_path: dict | str):
-        if not isinstance(config_or_path, dict):
-            config_or_path: str
+    def from_pretrained(cls, pretrained_model_name_or_path: str):
+        init_kwargs = cls.load(pretrained_model_name_or_path)
+        return cls(**init_kwargs)
 
-            if not config_or_path.endswith(cls.config_name):
-                config_or_path = os.path.join(config_or_path, cls.config_name)
+    @staticmethod
+    def load(pretrained_model_name_or_path: str):
+        config_path = os.path.join(
+            pretrained_model_name_or_path, PipelineRecord.config_name
+        )
 
-            config_or_path = load_json(config_or_path)
+        config = load_json(config_path)
 
-        config = config_or_path
-        return cls(**config)
+        _module = {
+            key: torch.load(os.path.join(pretrained_model_name_or_path, f'{key}.pt'))
+            for key in config.pop('_module')
+        }
+
+        init_kwargs = {**config, **_module}
+
+        return init_kwargs
 
     def save_pretrained(self, path: str):
         # print(self._record)
-        path = os.path.join(path, self.config_name)
-        safe_save_as_json(self._record, path)
+        config_path = os.path.join(path, self.config_name)
+
+        save_constant = copy.deepcopy(self._constant)
+        save_constant['_module'] = list(self._module.keys())
+        safe_save_as_json(save_constant, config_path)
+        for name, value in self._module.items():
+            torch.save(value, os.path.join(path, f'{name}.pt'))
 
 
 def _fetch_class_library_tuple(module):
@@ -110,20 +145,6 @@ def _fetch_class_library_tuple(module):
     class_name = not_compiled_module.__class__.__name__
 
     return (library, class_name)
-
-
-def _is_loadable_module(module):
-    if not hasattr(module, '__class__'):
-        return False
-    return module.__class__.__name__ in ALL_IMPORTABLE_CLASSES
-
-
-def is_json_serializable(obj):
-    try:
-        json.dumps(obj)
-        return True
-    except TypeError:
-        return False
 
 
 def register_to_pipeline_init(init):
@@ -171,12 +192,16 @@ def register_to_pipeline_init(init):
         init(self, *args, **init_kwargs)
 
         for name, value in new_kwargs.items():
-            if is_json_serializable(value):
-                self.register_constants(**{name: value})
-                # print(f'>> {name} {value.__class__.__name__}')
-            else:
-                # print(f'>>> {name} {value}')
+            # if is_json_serializable(value):
+            #     self.register_constants(**{name: value})
+            #     # print(f'>> {name} {value.__class__.__name__}')
+            # else:
+            #     # print(f'>>> {name} {value}')
+            #     self.register_modules(**{name: value})
+            if hasattr(value, 'from_pretrained') and hasattr(value, 'save_pretrained'):
                 self.register_modules(**{name: value})
+            else:
+                self.register_custom_values(**{name: value})
 
     return inner_init
 
@@ -199,18 +224,19 @@ class PipelineMixin(DiffusionPipeline):
         super().save_pretrained(
             save_directory, safe_serialization, variant, push_to_hub, **kwargs
         )
-        self._pipeline_record.save_pretrained(save_directory)
+        record_path = os.path.join(save_directory, 'record')
+        self._pipeline_record.save_pretrained(record_path)
 
     @classmethod
-    def from_pretrained(self, pretrained_model_name_or_path: dict | str):
+    def from_pretrained(self, pretrained_model_name_or_path: str):
+        record_path = os.path.join(pretrained_model_name_or_path, 'record')
         try:
-            record = PipelineRecord.from_pretrained(pretrained_model_name_or_path)
-            kwargs = record._record
+            kwargs = PipelineRecord.load(record_path)
         except Exception as e:
             kwargs = {}
         return super().from_pretrained(pretrained_model_name_or_path, **kwargs)
 
-    def register_constants(self, **kwargs):
+    def register_custom_values(self, **kwargs):
 
         for name, value in kwargs.items():
             self._pipeline_record.set(name, value)
