@@ -3,6 +3,9 @@ import sys
 import platform
 import os
 import subprocess
+from dataclasses import dataclass
+
+from .dataclass_utils import config_dataclass_wrapper
 
 
 def get_current_commit_hash():
@@ -32,3 +35,18 @@ def get_version():
         "_python_compiler": platform.python_compiler(),
         "_python_packages": packages_dict,
     }
+
+
+@config_dataclass_wrapper(config_name='version.json')
+class VersionInfo:
+    datetime: str
+    git_commit: str
+    platform: str
+    processor: str
+    python: str
+    python_compiler: str
+    python_packages: dict
+
+    @classmethod
+    def create(cls):
+        return cls(**get_version())

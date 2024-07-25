@@ -8,13 +8,17 @@ from typing import Dict, Iterable, Callable
 
 os.environ["WANDB_MODE"] = "offline"
 
-import accelerate
 import torch
 import torch.utils.data
+from diffusers.utils import is_accelerate_available
 from diffusers.configuration_utils import ConfigMixin, register_to_config
 
+if is_accelerate_available():
+    import accelerate
+else:
+    accelerate = None
+
 from . import constant
-from .version import get_version
 from ..conversion import get_obj_from_str
 from ..logger.logging import init_logger
 from ..random._seeds import seed_every_thing
@@ -23,6 +27,7 @@ from ..configuration import (
     # ConfigMixin,
     auto_cls_from_pretrained,
     config_dataclass_wrapper,
+    get_version,
 )
 
 logger = logging.getLogger(__name__)
@@ -174,16 +179,17 @@ class TrainerMixin(abc.ABC, ConfigMixin):
             self.save_config(self.output_dir)
             self.save_version()
             config_dict = self._internal_dict if hasattr(self, "_internal_dict") else {}
-            self.accelerator.init_trackers(
-                project_name=self.project,
-                init_kwargs={
-                    "wandb": {
-                        "name": self.name,
-                        "dir": self.writer_dir,
-                        "config": config_dict,
-                    }
-                },
-            )
+            if self.accelerator is not None:
+                self.accelerator.init_trackers(
+                    project_name=self.project,
+                    init_kwargs={
+                        "wandb": {
+                            "name": self.name,
+                            "dir": self.writer_dir,
+                            "config": config_dict,
+                        }
+                    },
+                )
         logger.debug("Save config and version.")
 
     def save_version(self) -> dict:
@@ -198,7 +204,10 @@ class TrainerMixin(abc.ABC, ConfigMixin):
             os.path.join(self.output_dir, self.output_files_manager.logging_dir),
             exist_ok=True,
         )
-        filename = f"rank{self.accelerator.state.process_index}.{self.output_files_manager.logging_file}"
+        if self.accelerator is not None:
+            filename = f"rank{self.accelerator.state.process_index}.{self.output_files_manager.logging_file}"
+        else:
+            filename = self.output_files_manager.logging_file
         if not self.is_local_main_process:
             logger_config["console_level"] = "CRITICAL"
         init_logger(
@@ -209,7 +218,7 @@ class TrainerMixin(abc.ABC, ConfigMixin):
         )
 
     def register_accelerator(self, accelerator_config: Dict = None) -> None:
-        if accelerator_config is None:
+        if accelerate is None or accelerator_config is None:
             self.accelerator = None
             self.use_ddp = False
         else:
@@ -255,6 +264,8 @@ class TrainerMixin(abc.ABC, ConfigMixin):
 
     @property
     def is_local_main_process(self) -> bool:
+        if not self.accelerator:
+            return True
         return self.accelerator.state.process_index == 0
 
     def wait_for_everyone(self):

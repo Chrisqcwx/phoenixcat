@@ -90,6 +90,7 @@ logger.info(f'model device={pipe.model.device}, dtype={pipe.model.dtype}')
 logger.info(f'------ test save and load ---------')
 
 pipe.save_pretrained(save_dir)
+pipe.save_config(os.path.join(save_dir, '_test_save_config'))
 pipe_new = TestPipeline.from_pretrained(save_dir)
 
 logger.info('save pipeline')

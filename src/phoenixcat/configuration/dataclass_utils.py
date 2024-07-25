@@ -3,7 +3,6 @@ import json
 from typing import get_args, Dict
 
 from ..files.save import safe_save_as_json
-from .pipeline_utils import pipeline_loadable
 
 
 def config_dataclass_wrapper(config_name='config.json'):
@@ -30,8 +29,6 @@ def config_dataclass_wrapper(config_name='config.json'):
 
         cls.from_config = cls.from_pretrained = from_config
         cls.save_config = cls.save_pretrained = save_config
-
-        cls = pipeline_loadable()(cls)
 
         return cls
 

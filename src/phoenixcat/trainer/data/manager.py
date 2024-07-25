@@ -5,10 +5,8 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 from dataclasses import dataclass
-from ...configuration import pipeline_loadable
 
 
-@pipeline_loadable
 @dataclass
 class DataManager:
     dataset: Dataset
@@ -28,12 +26,32 @@ class DataManager:
         return cls(dataset, dataloader)
 
 
-@pipeline_loadable
 @dataclass
 class DataManagerGroup:
     """Data Manager class."""
 
-    _datasets: Dict[DataManager]
+    _datasets: Dict[str, DataManager] = None
+
+    def __delattr__(self, name: str) -> None:
+        del self._datasets[name]
+
+    def __setattr__(self, name: str, data_manager: DataManager) -> None:
+        self._datasets[name] = data_manager
+
+    def __getattr__(self, name: str) -> DataManager:
+        return self._datasets[name]
+
+    def __getitem__(self, name: str) -> DataManager:
+        return self._datasets[name]
+
+    def __setitem__(self, name: str, data_manager: DataManager) -> None:
+        self._datasets[name] = data_manager
+
+    def __delitem__(self, name: str) -> None:
+        del self._datasets[name]
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._datasets
 
     def save_pretrained(self, save_directory: str) -> None:
         for name, data_manager in self._datasets.items():
