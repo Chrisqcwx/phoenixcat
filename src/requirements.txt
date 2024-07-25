@@ -1,0 +1,13 @@
+datasets==2.20.0
+diffusers==0.27.2
+huggingface_hub==0.22.2
+numpy==1.23.5
+pandas==1.5.3
+pytorch_lightning==2.2.4
+PyYAML==6.0.1
+PyYAML==6.0.1
+Requests==2.32.3
+safetensors==0.4.3
+torch==2.0.1
+torchvision==0.15.2
+tqdm==4.66.4
