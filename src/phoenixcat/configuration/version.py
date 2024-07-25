@@ -31,12 +31,10 @@ def get_version_pip():
 
 
 def clear_packages(origin_packages: Dict):
-    # 获取已加载的库
 
     result_packages = {}
     loaded_modules = sys.modules
 
-    # 打印已加载的库及其版本号
     for module_name, module in dict(loaded_modules).items():
         if '.' in module_name:
             continue
