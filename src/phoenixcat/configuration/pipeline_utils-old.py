@@ -10,7 +10,6 @@ from collections import ChainMap
 import torch
 import diffusers
 from diffusers import DiffusionPipeline
-from diffusers.utils import is_accelerate_available, is_accelerate_version
 from diffusers.pipelines.pipeline_loading_utils import (
     LOADABLE_CLASSES,
     _unwrap_model,
@@ -19,8 +18,6 @@ from diffusers.pipelines.pipeline_loading_utils import (
 
 from ..files import load_json, safe_save_as_json
 from ..conversion import get_obj_from_str
-from .configuration_utils import ConfigMixin
-
 
 logger = logging.getLogger(__name__)
 
@@ -231,18 +228,17 @@ def register_to_pipeline_init(init):
             # else:
             #     # print(f'>>> {name} {value}')
             #     self.register_modules(**{name: value})
-            # if hasattr(value, 'from_pretrained') and hasattr(value, 'save_pretrained'):
-            #     self.register_modules(**{name: value})
-            # else:
-            self.register_save_values(**{name: value})
+            if hasattr(value, 'from_pretrained') and hasattr(value, 'save_pretrained'):
+                self.register_modules(**{name: value})
+            else:
+                self.register_custom_values(**{name: value})
 
     return inner_init
 
 
-class PipelineMixin(ConfigMixin):
+class PipelineMixin(DiffusionPipeline):
 
-    config_name = 'config.json'
-    # record_folder: str = 'record'
+    record_folder: str = 'record'
     ignore_for_pipeline = set()
 
     def __init__(self) -> None:
@@ -253,24 +249,20 @@ class PipelineMixin(ConfigMixin):
     def save_pretrained(
         self,
         save_directory: str | os.PathLike,
-        # safe_serialization: bool = True,
-        # variant: str | None = None,
-        # push_to_hub: bool = False,
-        # **kwargs,
+        safe_serialization: bool = True,
+        variant: str | None = None,
+        push_to_hub: bool = False,
+        **kwargs,
     ):
-        # TODO: add these params
-
-        # super().save_pretrained(
-        #     save_directory, safe_serialization, variant, push_to_hub, **kwargs
-        # )
-        # record_path = os.path.join(save_directory, self.record_folder)
-        record_path = save_directory
+        super().save_pretrained(
+            save_directory, safe_serialization, variant, push_to_hub, **kwargs
+        )
+        record_path = os.path.join(save_directory, self.record_folder)
         self._pipeline_record.save_pretrained(record_path)
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path: str, **kwargs):
-        # record_path = os.path.join(pretrained_model_name_or_path, cls.record_folder)
-        record_path = pretrained_model_name_or_path
+        record_path = os.path.join(pretrained_model_name_or_path, cls.record_folder)
         try:
             records = PipelineRecord.load(record_path)
         except Exception as e:
@@ -281,114 +273,38 @@ class PipelineMixin(ConfigMixin):
         init_parameters = inspect.signature(cls.__init__).parameters.keys()
         init_kwargs = {k: v for k, v in kwargs.items() if k in init_parameters}
         other_kwargs = {k: v for k, v in kwargs.items() if k not in init_parameters}
-        # self = super().from_pretrained(pretrained_model_name_or_path, **init_kwargs)
-        self = cls(**init_kwargs)
+        self = super().from_pretrained(pretrained_model_name_or_path, **init_kwargs)
 
-        self.register_save_values(**other_kwargs)
+        self.register_custom_values(**other_kwargs)
 
         return self
 
-    def __setattr__(self, name: str, value):
-
-        if name.startswith('_'):
-            super().__setattr__(name, value)
-            return
-
-        self.register_save_values(**{name: value})
-
-    def register_save_values(self, **kwargs):
+    def register_custom_values(self, **kwargs):
 
         for name, value in kwargs.items():
             if not name in self.ignore_for_pipeline:
 
                 self._pipeline_record.set(name, value)
 
-            super().__setattr__(name, value)
-            self.register_to_config(**{name: value})
+            setattr(self, name, value)
 
-    def to(self, *args, **kwargs):
-        dtype = kwargs.pop("dtype", None)
-        device = kwargs.pop("device", None)
-        # silence_dtype_warnings = kwargs.pop("silence_dtype_warnings", False)
+    def register_modules(self, **kwargs):
+        for name, module in kwargs.items():
+            # set models
+            if not name in self.ignore_for_pipeline:
 
-        dtype_arg = None
-        device_arg = None
-        if len(args) == 1:
-            if isinstance(args[0], torch.dtype):
-                dtype_arg = args[0]
-            else:
-                device_arg = torch.device(args[0]) if args[0] is not None else None
-        elif len(args) == 2:
-            if isinstance(args[0], torch.dtype):
-                raise ValueError(
-                    "When passing two arguments, make sure the first corresponds to `device` and the second to `dtype`."
-                )
-            device_arg = torch.device(args[0]) if args[0] is not None else None
-            dtype_arg = args[1]
-        elif len(args) > 2:
-            raise ValueError(
-                "Please make sure to pass at most two arguments (`device` and `dtype`) `.to(...)`"
-            )
+                # retrieve library
+                if (
+                    module is None
+                    or isinstance(module, (tuple, list))
+                    and module[0] is None
+                ):
+                    register_dict = {name: (None, None)}
+                else:
+                    library, class_name = _fetch_class_library_tuple(module)
+                    register_dict = {name: (library, class_name)}
 
-        if dtype is not None and dtype_arg is not None:
-            raise ValueError(
-                "You have passed `dtype` both as an argument and as a keyword argument. Please only pass one of the two."
-            )
+                # save model index config
+                self.register_to_config(**register_dict)
 
-        dtype = dtype or dtype_arg
-
-        if device is not None and device_arg is not None:
-            raise ValueError(
-                "You have passed `device` both as an argument and as a keyword argument. Please only pass one of the two."
-            )
-
-        device = device or device_arg
-
-        for module in self.modules:
-            is_loaded_in_8bit = (
-                hasattr(module, "is_loaded_in_8bit") and module.is_loaded_in_8bit
-            )
-
-            if is_loaded_in_8bit and dtype is not None:
-                logger.warning(
-                    f"The module '{module.__class__.__name__}' has been loaded in 8bit and conversion to {dtype} is not yet supported. Module is still in 8bit precision."
-                )
-
-            if is_loaded_in_8bit and device is not None:
-                logger.warning(
-                    f"The module '{module.__class__.__name__}' has been loaded in 8bit and moving it to {dtype} via `.to()` is not yet supported. Module is still on {module.device}."
-                )
-            else:
-                module.to(device, dtype)
-
-        return self
-
-    @property
-    def modules(self):
-        return [
-            m
-            for m in self._pipeline_record._auto_save_modules.values()
-            if isinstance(m, torch.nn.Module)
-        ]
-
-    @property
-    def device(self):
-
-        for module in self.modules:
-            if hasattr(module, "device"):
-                return module.device
-            for param in module.parameters():
-                return param.device
-
-        return torch.device("cpu")
-
-    @property
-    def dtype(self):
-
-        for module in self.modules:
-            if hasattr(module, "dtype"):
-                return module.dtype
-            for param in module.parameters():
-                return param.dtype
-
-        return torch.float32
+            setattr(self, name, module)

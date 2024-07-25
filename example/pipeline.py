@@ -1,3 +1,7 @@
+import os
+import logging
+
+import torch
 import torchvision
 from torch import nn, Tensor
 from diffusers import DDIMScheduler, DDPMScheduler
@@ -7,11 +11,14 @@ from phoenixcat.models import register_model
 from phoenixcat.models.classifiers import BaseImageClassifier, BaseImageClassifierOutput
 from phoenixcat.logger.logging import init_logger
 from phoenixcat.random import seed_every_thing
-
 from phoenixcat.trainer.trainer_utils import TrainingOutputFilesManager
 from phoenixcat.configuration import PipelineMixin, register_to_pipeline_init
 
-init_logger("pipeline.log")
+save_dir = './test_pipeline'
+
+init_logger(os.path.join(save_dir, "pipeline.log"))
+
+logger = logging.getLogger(__name__)
 
 
 seed_every_thing(3)
@@ -50,8 +57,8 @@ class TestPipeline(PipelineMixin):
         super().__init__()
         self.manager = manager
 
-        self.register_custom_values(init_constant=777)
-        self.register_custom_values(init_module=DDPMScheduler(num_train_timesteps=7))
+        self.register_save_values(init_constant=777)
+        self.register_save_values(init_module=DDPMScheduler(num_train_timesteps=7))
 
 
 scheduler = DDIMScheduler()
@@ -64,8 +71,35 @@ pipe = TestPipeline(
     no_seri=nn.Identity(),
 )
 
-pipe.save_pretrained('./test_pipe')
-pipe_new = TestPipeline.from_pretrained('./test_pipe')
 
-print(type(pipe_new), pipe_new.a_constant, pipe_new.init_constant)
-print(list(pipe_new.__dict__.keys()))
+logger.info(f'------ test device and dtype ---------')
+logger.info('origin')
+logger.info(f'pipeline device={pipe.device}, dtype={pipe.dtype}')
+logger.info(f'model device={pipe.model.device}, dtype={pipe.model.dtype}')
+
+logger.info('to cuda and float16')
+pipe.to(torch.device('cuda'), torch.float16)
+logger.info(f'pipeline device={pipe.device}, dtype={pipe.dtype}')
+logger.info(f'model device={pipe.model.device}, dtype={pipe.model.dtype}')
+
+logger.info('to cpu and float32')
+pipe.to(torch.device('cpu'), torch.float32)
+logger.info(f'pipeline device={pipe.device}, dtype={pipe.dtype}')
+logger.info(f'model device={pipe.model.device}, dtype={pipe.model.dtype}')
+
+logger.info(f'------ test save and load ---------')
+
+pipe.save_pretrained(save_dir)
+pipe_new = TestPipeline.from_pretrained(save_dir)
+
+logger.info('save pipeline')
+logger.info(
+    f'type={type(pipe)}, a_constant={pipe.a_constant}, init_constant={pipe.init_constant}'
+)
+logger.info(f'keys={list(pipe.__dict__.keys())}')
+
+logger.info('load pipeline')
+logger.info(
+    f'type={type(pipe_new)}, a_constant={pipe_new.a_constant}, init_constant={pipe_new.init_constant}'
+)
+logger.info(f'keys={list(pipe_new.__dict__.keys())}')

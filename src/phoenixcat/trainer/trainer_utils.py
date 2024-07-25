@@ -41,15 +41,6 @@ def get_trainer_builder(name: str):
     return _trainer_register[name]
 
 
-@config_dataclass_wrapper(config_name='train_outputfiles.json')
-@dataclass
-class TrainingOutputFilesManager:
-    logging_file: str | os.PathLike = "training.log"
-    tensorboard_dir: str | os.PathLike = "tensorboard"
-    wandb_dir: str | os.PathLike = "wandb"
-    checkpoints_dir: str | os.PathLike = "checkpoints"
-
-
 @dataclass
 class TrainingConfig:
     batch_size: int
@@ -128,6 +119,7 @@ class TrainingConfig:
             )
 
 
+@config_dataclass_wrapper(config_name='train_outputfiles.json')
 @dataclass
 class TrainingOutputFilesManager:
     logging_file: str | os.PathLike = "debug.log"
