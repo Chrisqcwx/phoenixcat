@@ -1,4 +1,4 @@
-<img src="./assets/phoenixcat_logo_transparent.png" alt="phoenixcat_logo_transparent" style="zoom:25%;" />
+<img src="./assets/phoenixcat_logo_transparent.png" alt="phoenixcat_logo_transparent" width="400" />
 
 Phoenixcat is an enhanced infrastructure library for PyTorch and Hugging Face.
 
