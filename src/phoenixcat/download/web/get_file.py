@@ -1,3 +1,17 @@
+# Copyright 2024 Sijin Yu.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import logging
 import os
 import requests
@@ -13,7 +27,7 @@ def download_file(
     mkdirs: bool = True,
     chunk_size: int = 8192,
     retry: int = 10,
-    wait: float = 2.0
+    wait: float = 2.0,
 ):
     """Downloads a file from a specified URL and saves it to a local path.
 
@@ -22,7 +36,7 @@ def download_file(
         local_path (os.PathLike): The local file system path where the file should be saved.
         stream (bool, optional): Whether to stream the download. Default is True, recommended for large files.
             Defaults to True.
-        mkdirs (bool, optional): If True, create the directory for `local_path` if it doesn't exist. 
+        mkdirs (bool, optional): If True, create the directory for `local_path` if it doesn't exist.
             Defaults to True.
         chunk_size (int, optional): Size of chunks to download at a time in bytes. Defaults to 8192.
         retry (int, optional): Number of times to retry the download in case of failure. Defaults to 10.
@@ -43,7 +57,9 @@ def download_file(
             logger.info(f"Download {local_path} from {url}.")
             return True
         except Exception as e:
-            logger.warning(f"Failed to download from {url}: {str(e)}, retry {i + 1} / {retry} after {wait} sec.")
+            logger.warning(
+                f"Failed to download from {url}: {str(e)}, retry {i + 1} / {retry} after {wait} sec."
+            )
             time.sleep(wait)
     logger.error(f"Failed to download from {url}.")
     if os.path.exists(local_path):

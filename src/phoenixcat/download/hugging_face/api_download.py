@@ -1,3 +1,17 @@
+# Copyright 2024 Sijin Yu.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import logging
 import os
 
@@ -10,6 +24,7 @@ from ...check.check_args import only_one_given
 
 logger = logging.getLogger(__name__)
 
+
 def download_one_dir_from_huggingface(
     repo_id: str,
     repo_type: str,
@@ -21,17 +36,21 @@ def download_one_dir_from_huggingface(
     wait: float = 1.0,
     use_progress_bar: bool = True,
     overwrite: bool = False,
-    chunk_size: int = 8192
+    chunk_size: int = 8192,
 ):
     dirname = os.path.dirname(local_path)
     if mkdirs and dirname != "":
         os.makedirs(dirname, exist_ok=True)
-    
-    _all = get_json(f"{root_url}/api/{repo_type}/{repo_id}/tree/main/{path}", retry=retry, wait=wait)
-    
+
+    _all = get_json(
+        f"{root_url}/api/{repo_type}/{repo_id}/tree/main/{path}", retry=retry, wait=wait
+    )
+
     if use_progress_bar:
-        progress_bar = tqdm(range(len(_all)), desc=f"Downloading: {repo_id}/tree/main/{path}")
-    
+        progress_bar = tqdm(
+            range(len(_all)), desc=f"Downloading: {repo_id}/tree/main/{path}"
+        )
+
     for item in _all:
         if item.get("type") == "directory":
             download_one_dir_from_huggingface(
@@ -44,7 +63,7 @@ def download_one_dir_from_huggingface(
                 retry,
                 wait,
                 use_progress_bar,
-                overwrite
+                overwrite,
             )
         elif item.get("type", None) == "file":
             file_name = os.path.join(local_path, item.get('path'))
@@ -57,7 +76,7 @@ def download_one_dir_from_huggingface(
                 mkdirs,
                 chunk_size=chunk_size,
                 retry=retry,
-                wait=wait
+                wait=wait,
             )
         progress_bar.update(1)
 
@@ -71,24 +90,24 @@ def download_from_huggingface(
     retry: int = 20,
     wait: float = 5.0,
     chunk_size: int = 8192,
-    continue_download: bool = True
+    continue_download: bool = True,
 ):
-    """Downloads a dataset or model from Hugging Face, with options to use either a direct URL or a repository ID. 
+    """Downloads a dataset or model from Hugging Face, with options to use either a direct URL or a repository ID.
     The function supports downloading from a mirror site to potentially increase download speeds.
 
     Args:
         url (str, optional): Direct URL to the dataset or model. If specified, overrides `repo_id`. Defaults to None.
-        repo_id (str, optional): Repository identifier in the format 'author/reponame'. Used if `url` is not specified. 
+        repo_id (str, optional): Repository identifier in the format 'author/reponame'. Used if `url` is not specified.
             Defaults to None.
-        repo_type (str, optional): Type of the repository ('datasets' or 'models'). Required if `repo_id` is used. 
+        repo_type (str, optional): Type of the repository ('datasets' or 'models'). Required if `repo_id` is used.
             Defaults to None.
         use_mirror (bool, optional): Whether to download from a mirror site. Defaults to True.
-        local_path (os.PathLike, optional): Local filesystem path where the repository should be saved. 
+        local_path (os.PathLike, optional): Local filesystem path where the repository should be saved.
             Defaults to ".download".
         retry (int, optional): Number of retry attempts in case of failures. Defaults to 20.
         wait (float, optional): Wait time in seconds between retries. Defaults to 5.0.
         chunk_size (int, optional): Size of chunks to download at a time in bytes. Defaults to 8192.
-        continue_download (bool, optional): If True, will continue an existing download. 
+        continue_download (bool, optional): If True, will continue an existing download.
             If False, will overwrite existing files. Defaults to True.
 
     Raises:
@@ -97,16 +116,16 @@ def download_from_huggingface(
     if not only_one_given(url, repo_id):
         logger.error(f"Both `url` and `repo_id` are passed in.")
         raise ValueError(f"Both `url` and `repo_id` are passed in.")
-    
+
     if url is not None:
         root_url, repo_type, author, repo_name, *_ = url_spilt(url)
         repo_id = f"{author}/{repo_name}"
-    
+
     if use_mirror:
         root_url = "https://hf-mirror.com"
     elif url is None:
         root_url = "https://huggingface.co"
-    
+
     download_one_dir_from_huggingface(
         repo_id,
         repo_type,
@@ -117,5 +136,5 @@ def download_from_huggingface(
         retry=retry,
         wait=wait,
         chunk_size=chunk_size,
-        overwrite=not continue_download
+        overwrite=not continue_download,
     )
