@@ -2,18 +2,19 @@ import abc
 import functools
 import logging
 import os
+import json
 from dataclasses import dataclass
 from typing import Dict, Iterable, Callable
 
-import accelerate
+os.environ["WANDB_MODE"] = "offline"
 
-# from accelerate.logging import get_logger
+import accelerate
 import torch
 import torch.utils.data
-
 from diffusers.configuration_utils import ConfigMixin, register_to_config
 
 from . import constant
+from .version import get_version
 from ..conversion import get_obj_from_str
 from ..logger.logging import init_logger
 from ..random._seeds import seed_every_thing
@@ -127,12 +128,14 @@ class TrainingConfig:
             )
 
 
-# @dataclass
-# class TrainingOutputFilesManager:
-#     logging_file: str | os.PathLike = "training.log"
-#     tensorboard_dir: str | os.PathLike = "tensorboard"
-#     wandb_dir: str | os.PathLike = "wandb"
-#     checkpoints_dir: str | os.PathLike = "checkpoints"
+@dataclass
+class TrainingOutputFilesManager:
+    logging_file: str | os.PathLike = "debug.log"
+    version_file: str | os.PathLike = "version.json"
+    logging_dir: str | os.PathLike = "logs"
+    tensorboard_dir: str | os.PathLike = "tensorboard"
+    wandb_dir: str | os.PathLike = "wandb"
+    checkpoints_dir: str | os.PathLike = "checkpoints"
 
 
 @dataclass
@@ -154,29 +157,62 @@ class TrainerMixin(abc.ABC, ConfigMixin):
     config_name = "config.json"
     output_files_manager = TrainingOutputFilesManager()
 
-    # @register_to_config
     def __init__(
         self,
         output_dir: str | os.PathLike,
+        project: str,
+        name: str,
         seed: int = 0,
     ) -> None:
         super().__init__()
         self._set_seed(seed)
-        self.register_progress_bar(None)
-        self.output_dir = output_dir
+        self.project = project
+        self.name = name
+        self.output_dir = os.path.join(output_dir, project, name)
+        self.writer_dir = os.path.join(output_dir, project)
         self.flag = TrainingFlag()
-
-    def __post_init__(self) -> None:
-        self.auto_init()
+        self.store_to_log = dict()
 
     def _set_seed(self, seed: int) -> None:
         self.seed = seed
         seed_every_thing(seed)
 
+    def __post_init__(self) -> None:
+        if self.is_local_main_process:
+            self.save_config(self.output_dir)
+            self.save_version()
+            config_dict = self._internal_dict if hasattr(self, "_internal_dict") else {}
+            self.accelerator.init_trackers(
+                project_name=self.project,
+                init_kwargs={
+                    "wandb": {
+                        "name": self.name,
+                        "dir": self.writer_dir,
+                        "config": config_dict,
+                    }
+                },
+            )
+        logger.debug("Save config and version.")
+
+    def save_version(self) -> dict:
+        version = get_version()
+        with open(
+            os.path.join(self.output_dir, self.output_files_manager.version_file), "w"
+        ) as file:
+            json.dump(version, file, indent=2)
+
     def register_logger(self, logger_config: Dict = {}) -> None:
-        os.makedirs(self.output_dir, exist_ok=True)
+        os.makedirs(
+            os.path.join(self.output_dir, self.output_files_manager.logging_dir),
+            exist_ok=True,
+        )
+        filename = f"rank{self.accelerator.state.process_index}.{self.output_files_manager.logging_file}"
+        if not self.is_local_main_process:
+            logger_config["console_level"] = "CRITICAL"
         init_logger(
-            os.path.join(self.output_dir, self.output_files_manager.logging_file),
+            os.path.join(
+                self.output_dir, self.output_files_manager.logging_dir, filename
+            ),
             **logger_config,
         )
 
@@ -205,13 +241,11 @@ class TrainerMixin(abc.ABC, ConfigMixin):
             validation_dataloader,
         )
 
-    def register_progress_bar(self, progress_bar):
-        self._progress_bar = progress_bar
-
     def register_optimizer(self, params: Iterable, optimizer_config: Dict) -> None:
         optimizer_name = optimizer_config.pop("name", "torch.optim.Adam")
         optimizer_cls = get_obj_from_str(optimizer_name)
         self.optimizer = optimizer_cls(params, **optimizer_config)
+        logger.debug(f"Load {optimizer_name}.")
 
     def register_lr_scheduler(self, lr_scheduler_config: Dict) -> None:
         lr_scheduler_name = lr_scheduler_config.pop(
@@ -225,16 +259,11 @@ class TrainerMixin(abc.ABC, ConfigMixin):
             lr_scheduler_config[set_to_max_iter] = self.training_config.max_steps
         lr_scheduler_cls = get_obj_from_str(lr_scheduler_name)
         self.lr_scheduler = lr_scheduler_cls(self.optimizer, **lr_scheduler_config)
+        logger.debug(f"Load {lr_scheduler_name}.")
 
     @property
     def is_local_main_process(self) -> bool:
-        if self.accelerator is None:
-            return True
-        return self.accelerator.is_local_main_process
-
-    @property
-    def progress_bar(self):
-        return self._progress_bar
+        return self.accelerator.state.process_index == 0
 
     def wait_for_everyone(self):
         if self.accelerator is not None:
@@ -248,10 +277,6 @@ class TrainerMixin(abc.ABC, ConfigMixin):
             if self.flag.step < self.training_config.max_steps:
                 return True
         return False
-
-    @abc.abstractmethod
-    def auto_init(self):
-        raise NotImplementedError("Please implement the `auto_init` method.")
 
     @abc.abstractmethod
     def auto_set_to_train_mode(self):
@@ -289,26 +314,38 @@ class TrainerMixin(abc.ABC, ConfigMixin):
 
     @torch.no_grad()
     def _save_checkpoint(self):
+        self.wait_for_everyone()
         if self.is_local_main_process:
-            self.wait_for_everyone()
+            self.auto_set_to_eval_mode()
             self.auto_save_checkpoint()
+            self.auto_set_to_train_mode()
+        self.wait_for_everyone()
 
     @torch.no_grad()
     def _save_training_status(self):
+        self.wait_for_everyone()
         if self.is_local_main_process:
-            self.wait_for_everyone()
+            self.auto_set_to_eval_mode()
             self.auto_save_training_status()
+            self.auto_set_to_train_mode()
+        self.wait_for_everyone()
 
     @torch.no_grad()
     def _validation(self):
         self.wait_for_everyone()
+        self.auto_set_to_eval_mode()
         self.auto_validation()
+        self.auto_set_to_train_mode()
+        self.wait_for_everyone()
 
     @torch.no_grad()
     def _watching(self):
+        self.wait_for_everyone()
         if self.is_local_main_process:
-            self.wait_for_everyone()
+            self.auto_set_to_eval_mode()
             self.auto_watching()
+            self.auto_set_to_train_mode()
+        self.wait_for_everyone()
 
     @classmethod
     def from_yaml_config(cls, config_path: os.PathLike):
@@ -373,13 +410,14 @@ def register_to_run_one_epoch(only_training: bool = False):
 
         @functools.wraps(one_epoch_func)
         def run_one_epoch(self: TrainerMixin, *args, **kwargs):
+            logger.debug(f"Start Epoch {self.flag.epoch}.")
             result = one_epoch_func(self, *args, **kwargs)
+            logger.debug(f"End Epoch {self.flag.epoch}.")
+
             self.flag.epoch += 1
 
             if only_training:
                 return result
-
-            self.auto_set_to_eval_mode()
 
             if self.training_config.checkpointing_epoches is not None:
                 if self.flag.epoch % self.training_config.checkpointing_epoches == 0:
@@ -397,8 +435,6 @@ def register_to_run_one_epoch(only_training: bool = False):
                 if self.flag.epoch % self.training_config.watching_epoches == 0:
                     self._watching()
 
-            self.auto_set_to_train_mode()
-
             return result
 
         return run_one_epoch
@@ -413,15 +449,13 @@ def register_to_run_one_iteration(only_training: bool = False):
         @functools.wraps(one_iteration_func)
         def run_one_iteration(self: TrainerMixin, *args, **kwargs):
             result = one_iteration_func(self, *args, **kwargs)
-            self.flag.step += 1
 
-            if self.process_bar is not None:
-                self.process_bar.update(1)
+            self.flag.step += 1
+            if hasattr(self, "iter_process_bar") and self.iter_process_bar is not None:
+                self.iter_process_bar.update(1)
 
             if only_training:
                 return result
-
-            self.auto_set_to_eval_mode()
 
             if self.training_config.checkpointing_steps is not None:
                 if self.flag.step % self.training_config.checkpointing_steps == 0:
@@ -438,8 +472,6 @@ def register_to_run_one_iteration(only_training: bool = False):
             if self.training_config.watching_steps is not None:
                 if self.flag.step % self.training_config.watching_steps == 0:
                     self._watching()
-
-            self.auto_set_to_train_mode()
 
             return result
 
