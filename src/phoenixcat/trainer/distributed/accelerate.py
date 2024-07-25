@@ -1,8 +1,11 @@
 import dataclasses
+from diffusers.utils import is_accelerate_available
 
-import accelerate
+if is_accelerate_available():
+    import accelerate
 
-accelerate.Accelerator()
+    accelerate.Accelerator()
+
 
 @dataclasses.dataclass
 class AcceleratorConfig:

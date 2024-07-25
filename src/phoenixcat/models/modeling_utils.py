@@ -38,7 +38,6 @@ if is_accelerate_available():
 from ..decorators import Register
 
 from ..configuration import ConfigMixin, auto_cls_from_pretrained
-from ..configuration.pipeline_utils import pipeline_loadable
 
 logger = logging.get_logger(__name__)
 
@@ -48,7 +47,6 @@ _model_register = Register('model')
 
 
 def register_model(cls):
-    cls = pipeline_loadable()(cls)
     _model_register.register()(cls)
     return cls
 
