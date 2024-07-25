@@ -230,7 +230,7 @@ class PipelineMixin(ConfigMixin, AccelerateMixin):
         self.register_version()
 
     def register_version(self):
-        self.register_save_values(_version=VersionInfo.create())
+        self.register_save_values(_version=VersionInfo.create(clear_package=True))
 
     def register_logger(self, logger_config: Dict = None):
         if logger_config is None:
@@ -252,6 +252,7 @@ class PipelineMixin(ConfigMixin, AccelerateMixin):
         # )
         # record_path = os.path.join(save_directory, self.record_folder)
         record_path = save_directory
+        self.register_version()
         self._pipeline_record.save_pretrained(record_path)
 
     @classmethod
