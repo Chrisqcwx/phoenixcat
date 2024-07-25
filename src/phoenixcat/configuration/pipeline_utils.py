@@ -38,6 +38,11 @@ from .configuration_utils import ConfigMixin
 from .autosave_utils import is_json_serializable
 from .dataclass_utils import config_dataclass_wrapper
 from .version import VersionInfo
+from .accelerater_utils import (
+    only_local_main_process,
+    only_main_process,
+    AccelerateMixin,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -210,31 +215,7 @@ class OutputFilesManager:
     wandb_dir: str | os.PathLike = "wandb"
 
 
-def only_local_main_process(fn):
-
-    @functools.wraps(fn)
-    def inner_fn(self: PipelineMixin, *args, **kwargs):
-        self.wait_for_everyone()
-        if self.is_local_main_process:
-            return fn(self, *args, **kwargs)
-        self.wait_for_everyone()
-
-    return inner_fn
-
-
-def only_main_process(fn):
-
-    @functools.wraps(fn)
-    def inner_fn(self: PipelineMixin, *args, **kwargs):
-        self.wait_for_everyone()
-        if self.is_main_process:
-            return fn(self, *args, **kwargs)
-        self.wait_for_everyone()
-
-    return inner_fn
-
-
-class PipelineMixin(ConfigMixin):
+class PipelineMixin(ConfigMixin, AccelerateMixin):
 
     config_name = 'pipeline_config.json'
     # record_folder: str = 'record'
@@ -247,38 +228,6 @@ class PipelineMixin(ConfigMixin):
         # self.register_modules(pipeline_record=PipelineRecord())
 
         self.register_version()
-
-    def register_accelerator(self, accelerator_config: Dict = None) -> None:
-        if accelerate is None or accelerator_config is None:
-            if accelerator_config is not None:
-                logger.warn(
-                    "accelerate is not installed, so the accelerator_config will be ignored."
-                )
-            self._accelerator = None
-            self.use_ddp = False
-        else:
-            self._accelerator = Accelerator(**accelerator_config)
-            self.use_ddp = True
-
-    @property
-    def accelerator(self) -> "Accelerator" | None:
-        return getattr(self, "_accelerator", None)
-
-    @property
-    def is_local_main_process(self) -> bool:
-        if self.accelerator is None:
-            return True
-        return self.accelerator.is_local_main_process
-
-    @property
-    def is_main_process(self) -> bool:
-        if self.accelerator is None:
-            return True
-        return self.accelerator.is_main_process
-
-    def wait_for_everyone(self):
-        if self.accelerator is not None:
-            self.accelerator.wait_for_everyone()
 
     def register_version(self):
         self.register_save_values(_version=VersionInfo.create())

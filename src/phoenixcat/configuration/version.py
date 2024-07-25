@@ -27,7 +27,7 @@ def get_version():
             package_name, version = line.split()
             packages_dict[package_name] = version
     return {
-        "_datetime": datetime.datetime.now().strftime("%Y-%m-%d,%H:%M:%S"),
+        "_datetime": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "_git_commit": get_current_commit_hash(),
         "_platform": platform.platform(),
         "_processor": platform.processor(),
@@ -38,14 +38,15 @@ def get_version():
 
 
 @config_dataclass_wrapper(config_name='version.json')
+@dataclass
 class VersionInfo:
-    datetime: str
-    git_commit: str
-    platform: str
-    processor: str
-    python: str
-    python_compiler: str
-    python_packages: dict
+    _datetime: str
+    _git_commit: str
+    _platform: str
+    _processor: str
+    _python: str
+    _python_compiler: str
+    _python_packages: dict
 
     @classmethod
     def create(cls):
