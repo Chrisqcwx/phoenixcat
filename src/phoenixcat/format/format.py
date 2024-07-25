@@ -69,5 +69,5 @@ def format_as_yaml(obj) -> str:
     return yaml.dump(obj)
 
 
-def format_as_json(obj) -> str:
-    return json.dumps(obj)
+def format_as_json(obj, indent=2, sort_keys=True) -> str:
+    return json.dumps(obj, indent=indent, sort_keys=sort_keys)

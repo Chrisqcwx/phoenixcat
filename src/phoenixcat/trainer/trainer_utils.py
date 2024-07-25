@@ -1,33 +1,28 @@
 import abc
-import json
-import datetime
 import functools
 import logging
 import os
-import importlib
-from dataclasses import dataclass, field
-from typing import Dict, AnyStr, Any, Literal
+from dataclasses import dataclass
+from typing import Dict, Iterable, Callable
 
 import accelerate
 
 # from accelerate.logging import get_logger
 import torch
 import torch.utils.data
-from torch.utils.tensorboard import SummaryWriter
-from diffusers.optimization import get_scheduler
+
+from diffusers.configuration_utils import ConfigMixin, register_to_config
 
 from . import constant
+from ..conversion import get_obj_from_str
 from ..logger.logging import init_logger
 from ..random._seeds import seed_every_thing
 from ..decorators import Register
 from ..configuration import (
-    ConfigMixin,
+    # ConfigMixin,
     auto_cls_from_pretrained,
     config_dataclass_wrapper,
 )
-from ..models import ModelMixin, auto_model_from_pretrained
-from ..conversion import get_obj_from_str
-from ..files.save import safe_save_as_json, safe_save_torchobj
 
 logger = logging.getLogger(__name__)
 
@@ -54,25 +49,90 @@ class TrainingOutputFilesManager:
     checkpoints_dir: str | os.PathLike = "checkpoints"
 
 
+@dataclass
 class TrainingConfig:
-    def __init__(
-        self,
-        max_epoches: int = None,
-        max_steps: int = None,
-    ) -> None:
-        self.max_epoches = max_epoches
-        self.max_steps = max_steps
-        if (max_epoches is None) and (max_steps is None):
+    batch_size: int
+    test_batch_size: int = None
+    max_epoches: int = None
+    max_steps: int = None
+    checkpointing_epoches: int = None
+    checkpointing_steps: int = None
+    validation_epoches: int = None
+    validation_steps: int = None
+    saving_epoches: int = None
+    saving_steps: int = None
+    watching_epoches: int = None
+    watching_steps: int = None
+
+    def __post_init__(self) -> None:
+        if self.test_batch_size is None:
+            logger.warning(
+                f"`test_batch_size` is None, auto set to `batch_size` ({self.batch_size})."
+            )
+            self.test_batch_size = self.batch_size
+        if (self.max_epoches is None) and (self.max_steps is None):
             logger.warning(
                 f"Both `max_epochs` and `max_steps` are None. "
                 f"`max_epochs` is automatically set to 10000."
             )
             self.max_epoches = 10000
-        elif (max_epoches is not None) and (max_steps is not None):
+        elif (self.max_epoches is not None) and (self.max_steps is not None):
             logger.warning(
-                f"Both `max_epochs` and `max_first` are given. "
+                f"Both `max_epochs` and `max_steps` are given. "
                 f"Training will end when either limit is reached."
             )
+        if (self.checkpointing_epoches is None) and (self.checkpointing_steps is None):
+            logger.warning(
+                f"Both `checkpointing_epochs` and `checkpointing_steps` are None. "
+                f"No checkpoints will be saved during the training."
+            )
+        elif (self.checkpointing_epoches is not None) and (
+            self.checkpointing_steps is not None
+        ):
+            logger.warning(
+                f"Both `checkpointing_epochs` and `checkpointing_steps` are given. "
+                f"All checkpoints meeting the criteria will be saved."
+            )
+        if (self.validation_epoches is None) and (self.validation_steps is None):
+            logger.warning(
+                f"Both `validation_epochs` and `validation_steps` are None. "
+                f"No validation will be performed during the training."
+            )
+        elif (self.validation_epoches is not None) and (
+            self.validation_steps is not None
+        ):
+            logger.warning(
+                f"Both `validation_epochs` and `validation_steps` are given. "
+                f"All validation meeting the criteria will be performed."
+            )
+        if (self.saving_epoches is None) and (self.saving_steps is None):
+            logger.warning(
+                f"Both `saving_epochs` and `saving_steps` are None. "
+                f"No states will be saved during the training."
+            )
+        elif (self.saving_epoches is not None) and (self.saving_steps) is not None:
+            logger.warning(
+                f"Both `saving_epochs` and `saving_steps` are given. "
+                f"All states meeting the criteria will be saved."
+            )
+        if (self.watching_epoches is None) and (self.watching_steps is None):
+            logger.warning(
+                f"Both `saving_epochs` and `saving_steps` are None. "
+                f"No variables will be saved during the training."
+            )
+        elif (self.watching_epoches is not None) and (self.watching_steps is not None):
+            logger.warning(
+                f"Both `saving_epochs` and `saving_steps` are given. "
+                f"all variables meeting the criteria will be saved."
+            )
+
+
+# @dataclass
+# class TrainingOutputFilesManager:
+#     logging_file: str | os.PathLike = "training.log"
+#     tensorboard_dir: str | os.PathLike = "tensorboard"
+#     wandb_dir: str | os.PathLike = "wandb"
+#     checkpoints_dir: str | os.PathLike = "checkpoints"
 
 
 @dataclass
@@ -89,230 +149,82 @@ class TrainingDatasetManager:
     validation_dataloader: torch.utils.data.DataLoader = None
 
 
-def _get_torch_lr_scheduler(optimizer, name, kwargs):
-    lr_scheduler_cls = get_obj_from_str(f'torch.optim.lr_scheduler.{name}')
-    if lr_scheduler_cls is None:
-        return None
-    return lr_scheduler_cls(optimizer, **kwargs)
-
-
-def _get_diffusers_lr_scheduler(optimizer, name, kwargs):
-    try:
-        lr_scheduler = get_scheduler(name, optimizer, **kwargs)
-    except:
-        return None
-
-    return lr_scheduler
-
-
-LR_SCHEDULER_SOURCE = {
-    'torch': _get_torch_lr_scheduler,
-    'diffusers': _get_diffusers_lr_scheduler,
-}
-
-
-class TrainModelManager:
-    model: ModelMixin
-    optimizer: torch.optim.Optimizer
-    lr_scheduler: torch.optim.lr_scheduler.LRScheduler | None = None
-
-    optimizer_config_name = 'optimizer.json'
-    optimizer_state_dict_name = 'optimizer.bin'
-    lr_scheduler_config_name = 'lr_scheduler.json'
-    lr_scheduler_state_dict_name = 'lr_scheduler.bin'
-
-    def __init__(
-        self,
-        model: ModelMixin,
-        optimizer_name: str | None = None,
-        optimizer_kwargs: Dict[AnyStr, Any] = None,
-        lr_scheduler_name: str | None = None,
-        lr_scheduler_kwargs: Dict[AnyStr, Any] | None = None,
-        lr_scheduler_source: Literal[None, 'diffusers', 'torch'] = None,
-    ) -> None:
-
-        optimizer_kwargs = {} if optimizer_kwargs is None else optimizer_kwargs
-        lr_scheduler_kwargs = {} if lr_scheduler_kwargs is None else lr_scheduler_kwargs
-
-        self.model = model
-        self.optimizer_name = optimizer_name
-        self.optimizer_kwargs = optimizer_kwargs
-        self.lr_scheduler_name = lr_scheduler_name
-        self.lr_scheduler_kwargs = lr_scheduler_kwargs
-
-        if optimizer_name is None:
-            return
-
-        optimizer_cls = get_obj_from_str(f'torch.optim.{optimizer_name}')
-        if optimizer_cls is not None:
-            raise RuntimeError(f'`optimizer_name` cannot be found in torch.optim')
-        self.optimizer = optimizer_cls(self.model.parameters(), **optimizer_kwargs)
-
-        if lr_scheduler_name is None:
-            return
-
-        if lr_scheduler_source is None:
-            search_sources = LR_SCHEDULER_SOURCE.keys()
-        else:
-            if lr_scheduler_source not in LR_SCHEDULER_SOURCE:
-                repr_str = ', '.join(list(LR_SCHEDULER_SOURCE.keys()))
-                raise RuntimeError(
-                    f'`lr_scheduler_source` should be in {repr_str}, but found {lr_scheduler_source}'
-                )
-            search_sources = [lr_scheduler_source]
-
-        for source in search_sources:
-            lr_scheduler = LR_SCHEDULER_SOURCE[source](
-                self.optimizer, lr_scheduler_name, lr_scheduler_kwargs
-            )
-            if lr_scheduler is not None:
-                self.lr_scheduler = lr_scheduler
-                self.lr_scheduler_source = source
-                break
-        else:
-            repr_str = ', '.join(list(LR_SCHEDULER_SOURCE.keys()))
-            raise RuntimeError(f'`optimizer_name` cannot be found in [{repr_str}]')
-
-    @property
-    def is_trainable(self):
-        return self.optimizer is not None
-
-    def save_pretrained(self, save_directory: str):
-        self.model.save_pretrained(save_directory)
-
-        if self.optimizer is not None:
-            safe_save_as_json(
-                {'name': self.optimizer_name, 'kwargs': self.optimizer_kwargs},
-                os.path.join(save_directory, self.optimizer_config_name),
-            )
-            safe_save_torchobj(
-                self.optimizer.state_dict(), self.optimizer_state_dict_name
-            )
-
-        if self.lr_scheduler is not None:
-            safe_save_as_json(
-                {
-                    'name': self.lr_scheduler_name,
-                    'kwargs': self.lr_scheduler_kwargs,
-                    'source': self.lr_scheduler_source,
-                },
-                os.path.join(save_directory, self.lr_scheduler_config_name),
-            )
-            safe_save_torchobj(
-                self.lr_scheduler.state_dict(), self.lr_scheduler_state_dict_name
-            )
-
-    @classmethod
-    def from_pretrained(
-        cls, pretrained_model_path, dtype=None, device=None, train=True
-    ):
-        model = auto_model_from_pretrained(pretrained_model_path)
-        if dtype is not None:
-            model = model.to(dtype)
-        if device is not None:
-            model = model.to(device)
-
-        optimizer_path = os.path.join(pretrained_model_path, cls.optimizer_config_name)
-        if train and os.path.exists(optimizer_path):
-            with open(optimizer_path) as f:
-                optimizer_config = json.load(f)
-        else:
-            optimizer_config = {'name': None, 'kwargs': None}
-
-        lr_scheduler_path = os.path.join(
-            pretrained_model_path, cls.lr_scheduler_config_name
-        )
-        if train and os.path.exists(lr_scheduler_path):
-            with open(lr_scheduler_path) as f:
-                lr_scheduler_config = json.load(f)
-        else:
-            lr_scheduler_config = {'name': None, 'kwargs': None}
-
-        self = cls(
-            model=model,
-            optimizer_name=optimizer_config.get('name', None),
-            optimizer_kwargs=optimizer_config.get('kwargs', None),
-            lr_scheduler_name=lr_scheduler_config.get('name', None),
-            lr_scheduler_kwargs=lr_scheduler_config.get('kwargs', None),
-            lr_scheduler_source=lr_scheduler_config.get('lr_scheduler_source', None),
-        )
-
-        self._load_state_dict(
-            self.optimizer,
-            os.path.join(pretrained_model_path, self.optimizer_state_dict_name),
-        )
-        if self.lr_scheduler is not None:
-            self._load_state_dict(
-                self.lr_scheduler,
-                os.path.join(pretrained_model_path, self.lr_scheduler_state_dict_name),
-            )
-
-    def _load_state_dict(self, dst, path):
-        device = next(self.model.parameters()).device
-        state_dict = torch.load(path, map_location=device)
-        dst.load_state_dict(state_dict)
-
-
-@dataclass
-class TrainTempValues:
-
-    loss: torch.Tensor = 0
-
-
 class TrainerMixin(abc.ABC, ConfigMixin):
 
     config_name = "config.json"
     output_files_manager = TrainingOutputFilesManager()
 
+    # @register_to_config
     def __init__(
         self,
         output_dir: str | os.PathLike,
-        model_managers: Dict[AnyStr, TrainModelManager],
-        training_config: TrainingConfig,
-        dataset_manager: TrainingDatasetManager,
         seed: int = 0,
-        accerator: accelerate.Accelerator | None = None,
     ) -> None:
         super().__init__()
         self._set_seed(seed)
+        self.register_progress_bar(None)
         self.output_dir = output_dir
-        self.register_accelerator(accerator)
-        self.callbacks = []
-
         self.flag = TrainingFlag()
-        self.dataset_manager = dataset_manager
 
-        self.training_config = training_config
+    def __post_init__(self) -> None:
+        self.auto_init()
 
-        self.model_managers: Dict[AnyStr, TrainModelManager] = model_managers
-
-        self.train_temp_values = TrainTempValues()
-
-        self.auto_set_to_eval_mode()
-        self.auto_set_to_train_mode()
-
-    @property
-    def training(self):
-        return self._training
-
-    def _set_seed(self, seed: int):
+    def _set_seed(self, seed: int) -> None:
         self.seed = seed
         seed_every_thing(seed)
 
-    def _set_training_config(self, training_config: Dict):
+    def register_logger(self, logger_config: Dict = {}) -> None:
+        os.makedirs(self.output_dir, exist_ok=True)
+        init_logger(
+            os.path.join(self.output_dir, self.output_files_manager.logging_file),
+            **logger_config,
+        )
+
+    def register_accelerator(self, accelerator_config: Dict = None) -> None:
+        if accelerator_config is None:
+            self.accelerator = None
+            self.use_ddp = False
+        else:
+            self.accelerator = accelerate.Accelerator(**accelerator_config)
+            self.use_ddp = True
+
+    def register_training_config(self, training_config: Dict) -> None:
         self.training_config = TrainingConfig(**training_config)
 
-    def _reset_flag(self, epoch: int = 0, step: int = 0):
-        self.flag.epoch = epoch
-        self.flag.step = step
+    def register_training_dataset_manager(
+        self,
+        training_dataset: torch.utils.data.Dataset = None,
+        validation_dataset: torch.utils.data.Dataset = None,
+        training_dataloader: torch.utils.data.DataLoader = None,
+        validation_dataloader: torch.utils.data.DataLoader = None,
+    ) -> None:
+        self.dataset_manager = TrainingDatasetManager(
+            training_dataset,
+            validation_dataset,
+            training_dataloader,
+            validation_dataloader,
+        )
 
-    def set_callbacks(self, callbacks):
-        if callbacks is None:
-            callbacks = []
-        self.callbacks = callbacks
+    def register_progress_bar(self, progress_bar):
+        self._progress_bar = progress_bar
 
-    def register_accelerator(self, accelerator: accelerate.Accelerator):
-        self.accelerator = accelerator
+    def register_optimizer(self, params: Iterable, optimizer_config: Dict) -> None:
+        optimizer_name = optimizer_config.pop("name", "torch.optim.Adam")
+        optimizer_cls = get_obj_from_str(optimizer_name)
+        self.optimizer = optimizer_cls(params, **optimizer_config)
+
+    def register_lr_scheduler(self, lr_scheduler_config: Dict) -> None:
+        lr_scheduler_name = lr_scheduler_config.pop(
+            "name", "torch.optim.lr_scheduler.LambdaLR"
+        )
+        set_to_max_epoch = lr_scheduler_config.pop("set_to_max_epoch", None)
+        set_to_max_iter = lr_scheduler_config.pop("set_to_max_iter", None)
+        if set_to_max_epoch is not None:
+            lr_scheduler_config[set_to_max_epoch] = self.training_config.max_epoches
+        if set_to_max_iter is not None:
+            lr_scheduler_config[set_to_max_iter] = self.training_config.max_steps
+        lr_scheduler_cls = get_obj_from_str(lr_scheduler_name)
+        self.lr_scheduler = lr_scheduler_cls(self.optimizer, **lr_scheduler_config)
 
     @property
     def is_local_main_process(self) -> bool:
@@ -320,47 +232,42 @@ class TrainerMixin(abc.ABC, ConfigMixin):
             return True
         return self.accelerator.is_local_main_process
 
+    @property
+    def progress_bar(self):
+        return self._progress_bar
+
     def wait_for_everyone(self):
         if self.accelerator is not None:
             self.accelerator.wait_for_everyone()
 
+    def no_ending(self):
+        if self.training_config.max_epoches is not None:
+            if self.flag.epoch < self.training_config.max_epoches:
+                return True
+        if self.training_config.max_steps is not None:
+            if self.flag.step < self.training_config.max_steps:
+                return True
+        return False
+
     @abc.abstractmethod
-    def auto_init(self, reload: bool = False):
+    def auto_init(self):
         raise NotImplementedError("Please implement the `auto_init` method.")
 
-    # @abc.abstractmethod
+    @abc.abstractmethod
     def auto_set_to_train_mode(self):
-        self._training = True
-        for model_manager in self.model_managers.values():
-            if model_manager.is_trainable:
-                model_manager.model.train()
-        # raise NotImplementedError(
-        #     "Please implement the `auto_set_to_train_mode` method."
-        # )
-
-    # @abc.abstractmethod
-    def auto_set_to_eval_mode(self):
-        self._training = False
-        for model_manager in self.model_managers.values():
-            model_manager.model.eval()
-        # raise NotImplementedError(
-        #     "Please implement the `auto_set_to_eval_mode` method."
-        # )
-
-    # @abc.abstractmethod
-    def auto_save_checkpoint(self):
-        # raise NotImplementedError("Please implement the `auto_save_checkpoint` method.")
-        save_dir = os.path.join(
-            self.output_dir,
-            'checkpoints',
-            f'{self.flag.epoch}_{self.flag.step}',
+        raise NotImplementedError(
+            "Please implement the `auto_set_to_train_mode` method."
         )
-        for name, model_manager in self.model_managers.items():
-            save_path = os.path.join(save_dir, name)
-            os.makedirs(save_path, exist_ok=True)
-            model_manager.model.save_pretrained(
-                save_path, is_main_process=self.is_local_main_process
-            )
+
+    @abc.abstractmethod
+    def auto_set_to_eval_mode(self):
+        raise NotImplementedError(
+            "Please implement the `auto_set_to_eval_mode` method."
+        )
+
+    @abc.abstractmethod
+    def auto_save_checkpoint(self):
+        raise NotImplementedError("Please implement the `auto_save_checkpoint` method.")
 
     @abc.abstractmethod
     def auto_save_training_status(self):
@@ -429,35 +336,6 @@ class TrainerMixin(abc.ABC, ConfigMixin):
         return cls.from_config(config)
 
     @classmethod
-    def from_py_config(
-        cls,
-        config_path: os.PathLike = None,
-    ):
-        module_name = os.path.splitext(os.path.basename(config_path))[0]
-
-        spec = importlib.util.spec_from_file_location(module_name, config_path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-
-        config = {k: v for k, v in module.__dict__.items() if not k.startswith('__')}
-        return cls.from_config(config)
-
-        # TODO: 完善从 py 文件读取配置文件的功能.
-        # TODO: 太恶心了 我写不动 谁爱用这个功能谁写.
-        raise NotImplementedError
-        if (config_path is None) and (config_module is None):
-            raise ValueError(
-                "Cannot init form config with both `config_path` and `config_module` are None."
-            )
-        if (config_path is not None) and (config_module is not None):
-            logger.warning(
-                f"Both `config_path` and `config_module` are given. "
-                f"`config_path` is used by default."
-            )
-        if config_path is not None:
-            pass
-
-    @classmethod
     def from_config_file(cls, config_path: os.PathLike):
         from pathlib import Path
 
@@ -468,8 +346,6 @@ class TrainerMixin(abc.ABC, ConfigMixin):
             return cls.from_yaml_config(config_path)
         if extension in constant.ConfigSuffix.ini:
             return cls.from_ini_config(config_path)
-        if extension in constant.ConfigSuffix.py:
-            return cls.from_py_config(config_path)
         raise NotImplementedError(
             f"Unknown suffix '{extension}' in path '{config_path}'."
         )
@@ -483,19 +359,6 @@ class TrainerMixin(abc.ABC, ConfigMixin):
         logger.info(f"Warm up for epoch={self.flag.epoch} and step={self.flag.step}.")
         if self.flag.step == 0 and self.flag.epoch == 0:
             return self
-        # _step = 0
-        # _epoch = 0
-        # while True:
-        #     for _ in self.dataset_manager.training_dataloader:
-        #         _step += 1
-        #         if _step == self.flag.step:
-        #             if _epoch == self.flag.epoch:
-        #                 return self
-        #             else:
-        #                 raise RuntimeError(
-        #                     "`current_epoch` and `current_step` mismatch."
-        #                 )
-        #     _epoch += 1
 
         expect_epoch = self.flag.step // len(self.dataset_manager.training_dataloader)
         if expect_epoch != self.flag.epoch:
@@ -506,47 +369,33 @@ class TrainerMixin(abc.ABC, ConfigMixin):
 
 def register_to_run_one_epoch(only_training: bool = False):
 
-    def one_epoch_func_decorator(one_epoch_func: function):
+    def one_epoch_func_decorator(one_epoch_func: Callable):
 
         @functools.wraps(one_epoch_func)
         def run_one_epoch(self: TrainerMixin, *args, **kwargs):
-
+            result = one_epoch_func(self, *args, **kwargs)
             self.flag.epoch += 1
-
-            for callback in self.callbacks:
-                callback.on_train_epoch_begin()
-
-            result = one_epoch_func(*args, **kwargs)
-
-            for callback in self.callbacks:
-                callback.on_train_epoch_end()
 
             if only_training:
                 return result
 
             self.auto_set_to_eval_mode()
 
-            for callback in self.callbacks:
-                callback.on_eval_epoch_begin()
+            if self.training_config.checkpointing_epoches is not None:
+                if self.flag.epoch % self.training_config.checkpointing_epoches == 0:
+                    self._save_checkpoint()
 
-            # if self.training_config.checkpointing_epoches is not None:
-            #     if self.flag.epoch % self.training_config.checkpointing_epoches == 0:
-            #         self._save_checkpoint()
+            if self.training_config.saving_epoches is not None:
+                if self.flag.epoch % self.training_config.saving_epoches == 0:
+                    self._save_training_status()
 
-            # if self.training_config.saving_epoches is not None:
-            #     if self.flag.epoch % self.training_config.saving_epoches == 0:
-            #         self._save_training_status()
+            if self.training_config.validation_epoches is not None:
+                if self.flag.epoch % self.training_config.validation_epoches == 0:
+                    self._validation()
 
-            # if self.training_config.validation_epoches is not None:
-            #     if self.flag.epoch % self.training_config.validation_epoches == 0:
-            #         self._validation()
-
-            # if self.training_config.watching_epoches is not None:
-            #     if self.flag.epoch % self.training_config.watching_epoches == 0:
-            #         self._watching()
-
-            for callback in self.callbacks:
-                callback.on_eval_epoch_end()
+            if self.training_config.watching_epoches is not None:
+                if self.flag.epoch % self.training_config.watching_epoches == 0:
+                    self._watching()
 
             self.auto_set_to_train_mode()
 
@@ -559,47 +408,36 @@ def register_to_run_one_epoch(only_training: bool = False):
 
 def register_to_run_one_iteration(only_training: bool = False):
 
-    def one_iteration_func_decorator(one_iteration_func: function):
+    def one_iteration_func_decorator(one_iteration_func: Callable):
 
         @functools.wraps(one_iteration_func)
         def run_one_iteration(self: TrainerMixin, *args, **kwargs):
-
+            result = one_iteration_func(self, *args, **kwargs)
             self.flag.step += 1
 
-            for callback in self.callbacks:
-                callback.on_train_step_begin()
-
-            result = one_iteration_func(*args, **kwargs)
-
-            for callback in self.callbacks:
-                callback.on_train_step_end()
+            if self.process_bar is not None:
+                self.process_bar.update(1)
 
             if only_training:
                 return result
 
             self.auto_set_to_eval_mode()
 
-            for callback in self.callbacks:
-                callback.on_eval_step_begin()
+            if self.training_config.checkpointing_steps is not None:
+                if self.flag.step % self.training_config.checkpointing_steps == 0:
+                    self._save_checkpoint()
 
-            # if self.training_config.checkpointing_steps is not None:
-            #     if self.flag.step % self.training_config.checkpointing_steps == 0:
-            #         self._save_checkpoint()
+            if self.training_config.saving_steps is not None:
+                if self.flag.step % self.training_config.saving_steps == 0:
+                    self._save_training_status()
 
-            # if self.training_config.saving_steps is not None:
-            #     if self.flag.step % self.training_config.saving_steps == 0:
-            #         self._save_training_status()
+            if self.training_config.validation_steps is not None:
+                if self.flag.step % self.training_config.validation_steps == 0:
+                    self._validation()
 
-            # if self.training_config.validation_steps is not None:
-            #     if self.flag.step % self.training_config.validation_steps == 0:
-            #         self._validation()
-
-            # if self.training_config.watching_steps is not None:
-            #     if self.flag.step % self.training_config.watching_steps == 0:
-            #         self._watching()
-
-            for callback in self.callbacks:
-                callback.on_eval_step_end()
+            if self.training_config.watching_steps is not None:
+                if self.flag.step % self.training_config.watching_steps == 0:
+                    self._watching()
 
             self.auto_set_to_train_mode()
 

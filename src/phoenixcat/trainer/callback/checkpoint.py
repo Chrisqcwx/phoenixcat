@@ -48,23 +48,10 @@ class CheckpointCallbackMixin(CallbackMixin):
 class ModelCheckpointCallback(CheckpointCallbackMixin):
 
     @register_to_config
-    def __init__(
-        self, interval: int, level: Literal['epoch'] | Literal['step'] = 'epoch'
-    ):
+    def __init__(self, interval: int, level: Literal['epoch'] | Literal['step'] = 'epoch'):
         super().__init__(interval, level)
 
     def save_checkpoint(self, trainer: TrainerMixin):
-        # save_dir = os.path.join(
-        #     trainer.output_dir,
-        #     'checkpoints',
-        #     f'{self.level}_{self.get_value(trainer)}',
-        # )
-        # for name, model in trainer.model_managers.items():
-        #     save_path = os.path.join(save_dir, name)
-        #     os.makedirs(save_path, exist_ok=True)
-        #     model.model.save_pretrained(
-        #         save_path, is_main_process=trainer.is_local_main_process
-        #     )
         trainer._save_checkpoint()
 
     def on_train_end(self, trainer: TrainerMixin):
@@ -75,13 +62,8 @@ class ModelCheckpointCallback(CheckpointCallbackMixin):
 class TrainStatusCheckpointCallback(CheckpointCallbackMixin):
 
     @register_to_config
-    def __init__(
-        self, interval: int, level: Literal['epoch'] | Literal['step'] = 'epoch'
-    ):
+    def __init__(self, interval: int, level: Literal['epoch'] | Literal['step'] = 'epoch'):
         super().__init__(interval, level)
 
     def save_checkpoint(self, trainer: TrainerMixin):
-        # return torch.save(
-        #     trainer, os.path.join(trainer.output_dir, TRAINER_STATUS_NAME)
-        # )
         trainer._save_training_status()

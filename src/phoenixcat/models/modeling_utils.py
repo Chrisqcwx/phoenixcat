@@ -35,15 +35,22 @@ if is_accelerate_available():
     from accelerate.utils import set_module_tensor_to_device
     from accelerate.utils.versions import is_torch_version
 
-from phoenixcat.decorators import Register
+from ..decorators import Register
 
 from ..configuration import ConfigMixin, auto_cls_from_pretrained
+from ..configuration.pipeline_utils import pipeline_loadable
 
 logger = logging.get_logger(__name__)
 
 _model_register = Register('model')
 
-register_model = _model_register.register()
+# register_model = _model_register.register()
+
+
+def register_model(cls):
+    cls = pipeline_loadable()(cls)
+    _model_register.register()(cls)
+    return cls
 
 
 def list_models():

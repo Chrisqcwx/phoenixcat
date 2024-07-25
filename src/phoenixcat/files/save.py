@@ -75,6 +75,6 @@ def safe_save_as_json(obj, save_path: str):
 
     save_path = get_safe_save_path(save_path)
     with open(save_path, 'w') as f:
-        json.dump(obj, f)
+        json.dump(obj, f, indent=2, sort_keys=True)
 
     logger.info(f'Save json to {save_path}.')

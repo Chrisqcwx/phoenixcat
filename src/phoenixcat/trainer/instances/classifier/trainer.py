@@ -1,12 +1,11 @@
 from os import PathLike
-from typing import AnyStr
+from typing import Dict
 
 from accelerate.accelerator import Accelerator
 import torch
 
 from ...trainer_utils import (
     TrainerMixin,
-    TrainModelManager,
     TrainingConfig,
     TrainingDatasetManager,
     register_to_run_one_epoch,
@@ -15,19 +14,16 @@ from ...trainer_utils import (
 )
 from ....models.classifiers import BaseImageClassifier, BaseImageClassifierOutput
 
+import pytorch_lightning
 
-@register_trainer
-class ClassifierTrainer(TrainerMixin):
+
+# @register_trainer
+class ClassifierTrainerMixin(TrainerMixin):
 
     def __init__(
         self,
         output_dir: str | PathLike,
-        models: torch.Dict[AnyStr, TrainModelManager],
-        training_config: TrainingConfig,
-        dataset_manager: TrainingDatasetManager,
-        seed: int = 0,
-        accerator: Accelerator | None = None,
+        models: BaseImageClassifier,
+        seed=0,
     ) -> None:
-        super().__init__(
-            output_dir, models, training_config, dataset_manager, seed, accerator
-        )
+        super().__init__(output_dir, seed=0)

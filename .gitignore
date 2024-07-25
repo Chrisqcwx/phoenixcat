@@ -165,3 +165,6 @@ test/
 .download/
 .temp/
 *.nii
+*.bak
+*.tmp
+test_*
