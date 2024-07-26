@@ -43,6 +43,7 @@ from .accelerater_utils import (
     only_main_process,
     AccelerateMixin,
 )
+from .order_utils import ExecuteOrderMixin
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +216,7 @@ class OutputFilesManager:
     wandb_dir: str | os.PathLike = "wandb"
 
 
-class PipelineMixin(ConfigMixin, AccelerateMixin):
+class PipelineMixin(ConfigMixin, AccelerateMixin, ExecuteOrderMixin):
 
     config_name = 'pipeline_config.json'
     # record_folder: str = 'record'
@@ -293,7 +294,7 @@ class PipelineMixin(ConfigMixin, AccelerateMixin):
                 update_config_dict = self._pipeline_record.set(name, value)
                 self.register_to_config(**update_config_dict)
 
-            super().__setattr__(name, value)
+            ConfigMixin.__setattr__(self, name, value)
 
     def to(self, *args, **kwargs):
         dtype = kwargs.pop("dtype", None)

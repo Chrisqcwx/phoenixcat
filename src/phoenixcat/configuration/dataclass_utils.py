@@ -15,6 +15,7 @@
 import os
 import json
 from typing import get_args, Dict
+from dataclasses import is_dataclass, dataclass
 
 from ..files.save import safe_save_as_json
 

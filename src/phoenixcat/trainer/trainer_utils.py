@@ -46,6 +46,7 @@ def get_trainer_builder(name: str):
     return _trainer_register[name]
 
 
+@config_dataclass_wrapper(config_name='train_config.json')
 @dataclass
 class TrainingConfig:
     batch_size: int
@@ -135,6 +136,7 @@ class TrainingOutputFilesManager:
     checkpoints_dir: str | os.PathLike = "checkpoints"
 
 
+@config_dataclass_wrapper(config_name='train_flag.json')
 @dataclass
 class TrainingFlag:
     step: int = 0

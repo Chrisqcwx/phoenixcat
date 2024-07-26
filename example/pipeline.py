@@ -11,7 +11,11 @@ from phoenixcat.models import register_model
 from phoenixcat.models.classifiers import BaseImageClassifier, BaseImageClassifierOutput
 from phoenixcat.logger.logging import init_logger
 from phoenixcat.random import seed_every_thing
-from phoenixcat.trainer.trainer_utils import TrainingOutputFilesManager
+from phoenixcat.trainer.trainer_utils import (
+    TrainingOutputFilesManager,
+    TrainingConfig,
+    TrainingFlag,
+)
 from phoenixcat.configuration import PipelineMixin, register_to_pipeline_init
 
 save_dir = './test_pipeline'
@@ -49,19 +53,75 @@ class VGG16_64(BaseImageClassifier):
         return BaseImageClassifierOutput(prediction=prediction, feature=feature)
 
 
+class DummyClass:
+
+    def __init__(self) -> None:
+        self.dummy_value = 2
+
+
 class TestPipeline(PipelineMixin):
 
     @register_to_pipeline_init
-    def __init__(self, model, manager, scheduler, a_constant, no_seri):
+    def __init__(self, model, manager, scheduler, a_constant, no_seri, train_config):
 
         super().__init__()
         self.manager = manager
 
         self.register_save_values(init_constant=777)
         self.register_save_values(init_module=DDPMScheduler(num_train_timesteps=7))
+        self.flag = TrainingFlag()
+
+        self.dummy = DummyClass()
+
+    @property
+    def is_end(self):
+        return self.flag.epoch == self.train_config.max_epoches - 1
+
+    @PipelineMixin.register_execute_main('epoch')
+    def main_epoch(self, args):
+        logger.info(args)
+        self.flag.epoch += 1
+
+    @PipelineMixin.register_execute_order(
+        'epoch', order=1, interval=1, execute_time='before'
+    )
+    def f1(self):
+        logger.info('f1 execute')
+
+    @PipelineMixin.register_execute_order(
+        'epoch', order=3, interval='dummy.dummy_value', execute_time='before'
+    )
+    def f2(self):
+        logger.info('f2 execute')
+
+    @PipelineMixin.register_execute_order(
+        'epoch', order=2, interval=2, execute_time='before'
+    )
+    def f3(self):
+        logger.info('f3 execute')
+
+    @PipelineMixin.register_execute_order(
+        'epoch', order=1, interval=1, execute_time='after'
+    )
+    def f4(self):
+        logger.info('f4 execute')
+
+    @PipelineMixin.register_execute_order(
+        'epoch', order=3, interval=1, execute_time='after'
+    )
+    def f5(self):
+        logger.info('f5 execute')
+
+    @PipelineMixin.register_execute_order(
+        'epoch', order=2, interval=2, execute_time='after'
+    )
+    def f6(self):
+        logger.info('f6 execute')
 
 
 scheduler = DDIMScheduler()
+
+train_config = TrainingConfig(32, 64, max_epoches=4)
 
 pipe = TestPipeline(
     model=VGG16_64(num_classes=10),
@@ -69,8 +129,14 @@ pipe = TestPipeline(
     scheduler=scheduler,
     a_constant=["mao", 44],
     no_seri=nn.Identity(),
+    train_config=train_config,
 )
 
+
+logger.info(f'------ test epoch call ---------')
+for i in range(4):
+    logger.info(f'------ epoch {i} ---------')
+    pipe.main_epoch(f'epoch {i} main execute')
 
 logger.info(f'------ test device and dtype ---------')
 logger.info('origin')
