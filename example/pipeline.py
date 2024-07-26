@@ -61,6 +61,8 @@ class DummyClass:
 
 class TestPipeline(PipelineMixin):
 
+    _epoch_tag = 'epoch'
+
     @register_to_pipeline_init
     def __init__(self, model, manager, scheduler, a_constant, no_seri, train_config):
 
@@ -77,43 +79,43 @@ class TestPipeline(PipelineMixin):
     def is_end(self):
         return self.flag.epoch == self.train_config.max_epoches - 1
 
-    @PipelineMixin.register_execute_main('epoch')
-    def main_epoch(self, args):
-        logger.info(args)
+    @PipelineMixin.register_execute_main(_epoch_tag)
+    def main_epoch(self, dummy_str):
+        logger.info(dummy_str)
         self.flag.epoch += 1
 
     @PipelineMixin.register_execute_order(
-        'epoch', order=1, interval=1, execute_time='before'
+        _epoch_tag, order=1, interval=1, execute_stage='before'
     )
     def f1(self):
         logger.info('f1 execute')
 
     @PipelineMixin.register_execute_order(
-        'epoch', order=3, interval='dummy.dummy_value', execute_time='before'
+        _epoch_tag, order=3, interval='dummy.dummy_value', execute_stage='before'
     )
     def f2(self):
         logger.info('f2 execute')
 
     @PipelineMixin.register_execute_order(
-        'epoch', order=2, interval=2, execute_time='before'
+        _epoch_tag, order=2, interval=2, execute_stage='before'
     )
     def f3(self):
         logger.info('f3 execute')
 
     @PipelineMixin.register_execute_order(
-        'epoch', order=1, interval=1, execute_time='after'
+        _epoch_tag, order=1, interval=1, execute_stage='after'
     )
     def f4(self):
         logger.info('f4 execute')
 
     @PipelineMixin.register_execute_order(
-        'epoch', order=3, interval=1, execute_time='after'
+        _epoch_tag, order=3, interval=1, execute_stage='after'
     )
     def f5(self):
         logger.info('f5 execute')
 
     @PipelineMixin.register_execute_order(
-        'epoch', order=2, interval=2, execute_time='after'
+        _epoch_tag, order=2, interval=2, execute_stage='after'
     )
     def f6(self):
         logger.info('f6 execute')

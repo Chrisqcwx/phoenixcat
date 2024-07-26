@@ -21,18 +21,18 @@ class ExecuteOrderMixin:
 
     @staticmethod
     def register_execute_order(
-        execute_stage: str,
+        tag: str,
         order=0,
         interval: int | str = 1,
-        execute_time: Literal['before', 'after'] = 'after',
+        execute_stage: Literal['before', 'after'] = 'after',
     ):
         def wrapper(func):
 
             func._order_info = {
-                'execute_stage': execute_stage,
+                'tag': tag,
                 'order': order,
                 'interval': interval,
-                'execute_time': execute_time,
+                'execute_stage': execute_stage,
             }
 
             return func
@@ -40,9 +40,9 @@ class ExecuteOrderMixin:
         return wrapper
 
     @staticmethod
-    def register_execute_main(execute_stage: str):
+    def register_execute_main(tag: str):
         def wrapper(func):
-            func._main_execute_stage = execute_stage
+            func._main_tag = tag
             return func
 
         return wrapper
@@ -60,17 +60,13 @@ class ExecuteOrderMixin:
         for name, func in self.__class__.__dict__.items():
             # print(f'has name: {name}', callable(func))
             if callable(func):
-                if hasattr(func, '_main_execute_stage'):
-                    self._execute_main_method[func._main_execute_stage] = func
+                if hasattr(func, '_main_tag'):
+                    self._execute_main_method[func._main_tag] = func
                 if hasattr(func, '_order_info'):
-                    if func._order_info['execute_time'] == 'before':
-                        self._execute_order_before[
-                            func._order_info['execute_stage']
-                        ].append(func)
+                    if func._order_info['execute_stage'] == 'before':
+                        self._execute_order_before[func._order_info['tag']].append(func)
                     else:
-                        self._execute_order_after[
-                            func._order_info['execute_stage']
-                        ].append(func)
+                        self._execute_order_after[func._order_info['tag']].append(func)
 
         for stage in self._execute_order_before.keys():
             self._execute_order_before[stage].sort(key=lambda x: x._order_info['order'])
