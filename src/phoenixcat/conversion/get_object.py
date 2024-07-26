@@ -23,3 +23,9 @@ def get_obj_from_str(strings: Union[str, Sequence[str]], reload=False):
     if not hasattr(module, cls):
         return None
     return getattr(module, cls)
+
+
+def get_attribute_from_obj(obj, attribute: str):
+    for att in attribute.split("."):
+        obj = getattr(obj, att)
+    return obj

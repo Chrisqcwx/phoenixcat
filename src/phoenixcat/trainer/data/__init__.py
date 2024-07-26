@@ -6,4 +6,5 @@ from .dataset_wrappers import (
     DatasetIndexWrapper,
 )
 from .label_dataset import LabelImageFolder
-from .manager import DataManager, DataManagerGroup
+
+# from .manager import DataManager, DataManagerGroup

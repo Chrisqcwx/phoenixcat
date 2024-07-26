@@ -14,17 +14,19 @@
 
 import os
 import logging
+import functools
+from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Union, List, Dict, Any
+from typing import Optional, Union, List, Dict, Any, Literal
 
 import torch
+
 
 from diffusers.utils import is_accelerate_available
 
 if is_accelerate_available():
     from accelerate import Accelerator
 
-from .data import DataManagerGroup, DataManager
 from ..configuration import PipelineMixin, config_dataclass_wrapper
 from ..random import seed_every_thing
 
@@ -38,14 +40,6 @@ class TrainingConfig:
     test_batch_size: int = None
     max_epoches: int = None
     max_steps: int = None
-    checkpointing_epoches: int = None
-    checkpointing_steps: int = None
-    validation_epoches: int = None
-    validation_steps: int = None
-    saving_epoches: int = None
-    saving_steps: int = None
-    watching_epoches: int = None
-    watching_steps: int = None
 
     def __post_init__(self) -> None:
         if self.test_batch_size is None:
@@ -63,50 +57,6 @@ class TrainingConfig:
             logger.warning(
                 f"Both `max_epochs` and `max_steps` are given. "
                 f"Training will end when either limit is reached."
-            )
-        if (self.checkpointing_epoches is None) and (self.checkpointing_steps is None):
-            logger.warning(
-                f"Both `checkpointing_epochs` and `checkpointing_steps` are None. "
-                f"No checkpoints will be saved during the training."
-            )
-        elif (self.checkpointing_epoches is not None) and (
-            self.checkpointing_steps is not None
-        ):
-            logger.warning(
-                f"Both `checkpointing_epochs` and `checkpointing_steps` are given. "
-                f"All checkpoints meeting the criteria will be saved."
-            )
-        if (self.validation_epoches is None) and (self.validation_steps is None):
-            logger.warning(
-                f"Both `validation_epochs` and `validation_steps` are None. "
-                f"No validation will be performed during the training."
-            )
-        elif (self.validation_epoches is not None) and (
-            self.validation_steps is not None
-        ):
-            logger.warning(
-                f"Both `validation_epochs` and `validation_steps` are given. "
-                f"All validation meeting the criteria will be performed."
-            )
-        if (self.saving_epoches is None) and (self.saving_steps is None):
-            logger.warning(
-                f"Both `saving_epochs` and `saving_steps` are None. "
-                f"No states will be saved during the training."
-            )
-        elif (self.saving_epoches is not None) and (self.saving_steps) is not None:
-            logger.warning(
-                f"Both `saving_epochs` and `saving_steps` are given. "
-                f"All states meeting the criteria will be saved."
-            )
-        if (self.watching_epoches is None) and (self.watching_steps is None):
-            logger.warning(
-                f"Both `saving_epochs` and `saving_steps` are None. "
-                f"No variables will be saved during the training."
-            )
-        elif (self.watching_epoches is not None) and (self.watching_steps is not None):
-            logger.warning(
-                f"Both `saving_epochs` and `saving_steps` are given. "
-                f"all variables meeting the criteria will be saved."
             )
 
 
@@ -131,16 +81,79 @@ class TrainingFlag:
 class TrainPipelineMixin(PipelineMixin):
 
     output_files_manager: TrainingOutputFilesManager = TrainingOutputFilesManager()
+    flag: TrainingFlag = TrainingFlag()
 
-    dataset_group: DataManagerGroup
+    ignore_for_pipeline = {'accelerator'}
 
     def __init__(
-        self, output_dir: str, seed: int = 0, accelerator: Optional[Accelerator] = None
+        self,
+        output_dir: str,
+        training_config: TrainingConfig,
+        seed: int = 0,
+        accelerator: Optional["Accelerator" | Dict] = None,
     ) -> None:
         super().__init__()
-        self.accelerator = accelerator
+        self.register_accelerator(accelerator)
         self.output_dir = output_dir
+        self.training_config = training_config
         self._set_seed(seed)
+
+    def epoch_function(self, order=0, interval: int | str = 1):
+        def wrapper(func):
+            # @functools.wraps(func)
+            def wrapped_func(*args, **kwargs):
+                nonlocal interval
+                if isinstance(interval, str):
+                    interval = getattr(self.training_config, interval)
+                if (
+                    self.flag.epoch % interval == 0
+                    or self.flag.epoch == self.training_config.max_epoches - 1
+                ):
+                    func(self, *args, **kwargs)
+
+            self._epoch_functions.append((order, func))
+            return wrapped_func
+
+        return wrapper
+
+    def step_function(self=None, order=0, interval: int | str = 1):
+
+        def wrapper(func):
+            @functools.wraps(func)
+            def wrapped_func(self: "TrainPipelineMixin", *args, **kwargs):
+                nonlocal interval
+                if isinstance(interval, str):
+                    interval = getattr(self.training_config, interval)
+                if (
+                    self.flag.step % interval == 0
+                    or self.flag.step == self.training_config.max_steps - 1
+                ):
+                    func(self, *args, **kwargs)
+
+            self._step_functions.append((order, func))
+            return wrapped_func
+
+        return wrapper
+
+    def simple_wrap(self, func=None):
+        if func is None:
+            func = self
+        self = func.__self__
+        print(func)
+        print(self)
+
+        def _inner(*args, **kwargs):
+            return func(*args, **kwargs)
+
+        return _inner
+
+    @simple_wrap
+    def reset_flag(self):
+        self.flag.epoch = 0
+        self.flag.step = 0
+
+    def set_training_config(self, training_config: TrainingConfig):
+        self.training_config = training_config
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path: str, **kwargs):
@@ -153,5 +166,16 @@ class TrainPipelineMixin(PipelineMixin):
         self.seed = seed
         seed_every_thing(seed)
 
-    def register_dataset(self, name: str, dataset_manager: DataManager):
-        self.dataset_group[name] = dataset_manager
+
+Accelerator
+
+
+class BB(TrainPipelineMixin):
+
+    # epoch_function = TrainPipelineMixin.epoch_function
+
+    # @epoch_function(order=0, interval='save_interval')
+    # def func(self):
+    #     pass
+
+    pass
