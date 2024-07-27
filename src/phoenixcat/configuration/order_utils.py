@@ -8,6 +8,36 @@ import torch
 from ..conversion import get_attribute_from_obj
 
 
+# @staticmethod
+def register_execute_order(
+    tag: str,
+    order=0,
+    interval: int | str = 1,
+    execute_stage: Literal['before', 'after'] = 'after',
+):
+    def wrapper(func):
+
+        func._order_info = {
+            'tag': tag,
+            'order': order,
+            'interval': interval,
+            'execute_stage': execute_stage,
+        }
+
+        return func
+
+    return wrapper
+
+
+# @staticmethod
+def register_execute_main(tag: str):
+    def wrapper(func):
+        func._main_tag = tag
+        return func
+
+    return wrapper
+
+
 class ExecuteOrderMixin:
 
     _execute_main_method = None  # type: ignore
@@ -26,26 +56,11 @@ class ExecuteOrderMixin:
         interval: int | str = 1,
         execute_stage: Literal['before', 'after'] = 'after',
     ):
-        def wrapper(func):
-
-            func._order_info = {
-                'tag': tag,
-                'order': order,
-                'interval': interval,
-                'execute_stage': execute_stage,
-            }
-
-            return func
-
-        return wrapper
+        return register_execute_order(tag, order, interval, execute_stage)
 
     @staticmethod
     def register_execute_main(tag: str):
-        def wrapper(func):
-            func._main_tag = tag
-            return func
-
-        return wrapper
+        return register_execute_main(tag)
 
     def _get_interval(self, func):
         interval = func._order_info['interval']

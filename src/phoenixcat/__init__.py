@@ -1,6 +1,6 @@
-from .welcome import add_welcome_msg, welcome_print
-from .constant import USER_NAME
+from ._init import _init_fn
 
-welcome_print(USER_NAME)
 
 __version__ = "dev:0.2.0"
+
+_init_fn()
