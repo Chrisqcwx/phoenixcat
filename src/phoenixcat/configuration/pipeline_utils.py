@@ -32,10 +32,8 @@ if is_accelerate_available():
 else:
     accelerate = None
 
-from ..files import load_json, safe_save_as_json
-from ..conversion import get_obj_from_str
 from .configuration_utils import ConfigMixin
-from .autosave_utils import is_json_serializable
+from .autosave_utils import AutoSaver, split_init_other_parameters
 from .dataclass_utils import config_dataclass_wrapper
 from .version import VersionInfo
 from .accelerater_utils import (
@@ -46,105 +44,6 @@ from .accelerater_utils import (
 from .order_utils import ExecuteOrderMixin
 
 logger = logging.getLogger(__name__)
-
-
-class PipelineRecord:
-
-    config_name = "pipeline_config.json"
-    _auto_save_name = "_auto_save_modules"
-    _pt_save_name = "_pt_save_modules"
-
-    def __init__(self, **kwargs):
-        self._constant = {}
-        self._auto_save_modules = {}
-        self._pt_save_modules = {}
-        for name, value in kwargs.items():
-            self.set(name, value)
-
-    def set(self, key, value):
-        # self._record[key] = value
-        if hasattr(value, 'from_pretrained') and hasattr(value, 'save_pretrained'):
-            self._auto_save_modules[key] = value
-            return {self._auto_save_name: list(self._auto_save_modules.keys())}
-        elif is_json_serializable(value):
-            self._constant[key] = value
-            return {key: value}
-        else:
-            self._pt_save_modules[key] = value
-            return {self._pt_save_name: list(self._pt_save_modules.keys())}
-
-    def get(self, key):
-        return ChainMap(
-            self._constant, self._auto_save_modules, self._pt_save_modules
-        ).get(key, None)
-
-    def __getitem__(self, key):
-        return self.get(key)
-
-    def __setitem__(self, key, value):
-        self.set(key, value)
-
-    @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path: str):
-        init_kwargs = cls.load(pretrained_model_name_or_path)
-        return cls(**init_kwargs)
-
-    @staticmethod
-    def load(pretrained_model_name_or_path: str):
-        config_path = os.path.join(
-            pretrained_model_name_or_path, PipelineRecord.config_name
-        )
-
-        config = load_json(config_path)
-
-        _pt_save_module = {
-            key: torch.load(os.path.join(pretrained_model_name_or_path, f'{key}.pt'))
-            for key in config.pop(PipelineRecord._pt_save_name, [])
-            if not key.startswith('_')
-        }
-
-        _auto_save_module = {}
-        for name, cls_name in config.pop(PipelineRecord._auto_save_name, {}).items():
-            if name.startswith('_'):
-                continue
-            builder = get_obj_from_str(cls_name)
-            module = builder.from_pretrained(
-                os.path.join(pretrained_model_name_or_path, name)
-            )
-            _auto_save_module[name] = module
-
-        config = {k: v for k, v in config.items() if not k.startswith("_")}
-
-        init_kwargs = {**config, **_pt_save_module, **_auto_save_module}
-
-        return init_kwargs
-
-    def save_pretrained(self, path: str):
-        # print(self._record)
-        config_path = os.path.join(path, self.config_name)
-
-        save_constant = copy.deepcopy(self._constant)
-        save_constant[self._pt_save_name] = list(self._pt_save_modules.keys())
-
-        save_constant[self._auto_save_name] = {}
-        for name, value in self._auto_save_modules.items():
-            save_constant[self._auto_save_name][
-                name
-            ] = f'{value.__class__.__module__}.{value.__class__.__name__}'
-            name = name.lstrip('_')
-            value.save_pretrained(os.path.join(path, name))
-
-        safe_save_as_json(save_constant, config_path)
-
-        for name, value in self._pt_save_modules.items():
-            torch.save(value, os.path.join(path, f'{name}.pt'))
-
-    @property
-    def config(self):
-        _config = copy.deepcopy(self._constant)
-        _config[self._pt_save_name] = list(self._pt_save_modules.keys())
-        _config[self._auto_save_name] = list(self._auto_save_modules.keys())
-        return _config
 
 
 def register_to_pipeline_init(init):
@@ -180,27 +79,10 @@ def register_to_pipeline_init(init):
             }
         )
 
-        # Take note of the parameters that were not present in the loaded config
-        # if len(set(new_kwargs.keys()) - set(init_kwargs)) > 0:
-        #     new_kwargs["_use_default_values"] = list(
-        #         set(new_kwargs.keys()) - set(init_kwargs)
-        #     )
-
         new_kwargs = {**config_init_kwargs, **new_kwargs}
-        # getattr(self, "register_to_config")(**new_kwargs)
-        # self.register_to_status(**new_kwargs)
         init(self, *args, **init_kwargs)
 
         for name, value in new_kwargs.items():
-            # if is_json_serializable(value):
-            #     self.register_constants(**{name: value})
-            #     # print(f'>> {name} {value.__class__.__name__}')
-            # else:
-            #     # print(f'>>> {name} {value}')
-            #     self.register_modules(**{name: value})
-            # if hasattr(value, 'from_pretrained') and hasattr(value, 'save_pretrained'):
-            #     self.register_modules(**{name: value})
-            # else:
             self.register_save_values(**{name: value})
 
     return inner_init
@@ -210,7 +92,6 @@ def register_to_pipeline_init(init):
 @dataclass
 class OutputFilesManager:
     logging_file: str | os.PathLike = "debug.log"
-    version_file: str | os.PathLike = "version.json"
     logging_dir: str | os.PathLike = "logs"
     tensorboard_dir: str | os.PathLike = "tensorboard"
     wandb_dir: str | os.PathLike = "wandb"
@@ -225,7 +106,7 @@ class PipelineMixin(ConfigMixin, AccelerateMixin, ExecuteOrderMixin):
 
     def __init__(self) -> None:
         super().__init__()
-        self._pipeline_record = PipelineRecord()
+        self._pipeline_record = AutoSaver()
         # self.register_modules(pipeline_record=PipelineRecord())
 
         self.register_version()
@@ -261,15 +142,16 @@ class PipelineMixin(ConfigMixin, AccelerateMixin, ExecuteOrderMixin):
         # record_path = os.path.join(pretrained_model_name_or_path, cls.record_folder)
         record_path = pretrained_model_name_or_path
         try:
-            records = PipelineRecord.load(record_path)
+            records = AutoSaver.load(record_path)
         except Exception as e:
             records = {}
 
         kwargs = {**records, **kwargs}
 
-        init_parameters = inspect.signature(cls.__init__).parameters.keys()
-        init_kwargs = {k: v for k, v in kwargs.items() if k in init_parameters}
-        other_kwargs = {k: v for k, v in kwargs.items() if k not in init_parameters}
+        # init_parameters = inspect.signature(cls.__init__).parameters.keys()
+        # init_kwargs = {k: v for k, v in kwargs.items() if k in init_parameters}
+        # other_kwargs = {k: v for k, v in kwargs.items() if k not in init_parameters}
+        init_kwargs, other_kwargs = split_init_other_parameters(cls, kwargs)
         # self = super().from_pretrained(pretrained_model_name_or_path, **init_kwargs)
         self = cls(**init_kwargs)
 

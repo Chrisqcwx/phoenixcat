@@ -64,7 +64,16 @@ class TestPipeline(PipelineMixin):
     _epoch_tag = 'epoch'
 
     @register_to_pipeline_init
-    def __init__(self, model, manager, scheduler, a_constant, no_seri, train_config):
+    def __init__(
+        self,
+        model,
+        manager,
+        scheduler,
+        a_constant,
+        no_seri,
+        train_config,
+        auto_regist_save_load,
+    ):
 
         super().__init__()
         self.manager = manager
@@ -125,6 +134,13 @@ scheduler = DDIMScheduler()
 
 train_config = TrainingConfig(32, 64, max_epoches=4)
 
+import accelerate
+
+accelerator = accelerate.Accelerator(
+    gradient_accumulation_steps=2,
+    dataloader_config=accelerate.DataLoaderConfiguration(split_batches=True),
+)
+
 pipe = TestPipeline(
     model=VGG16_64(num_classes=10),
     manager=TrainingOutputFilesManager(),
@@ -132,6 +148,7 @@ pipe = TestPipeline(
     a_constant=["mao", 44],
     no_seri=nn.Identity(),
     train_config=train_config,
+    auto_regist_save_load=accelerator,
 )
 
 
@@ -170,11 +187,13 @@ pipe_new = TestPipeline.from_pretrained(save_dir)
 logger.info('save pipeline')
 logger.info(
     f'type={type(pipe)}, a_constant={pipe.a_constant}, init_constant={pipe.init_constant}'
+    f'accelerator gradient_accumulation_steps={pipe.auto_regist_save_load.gradient_accumulation_steps}'
 )
 logger.info(f'keys={list(pipe.__dict__.keys())}')
 
 logger.info('load pipeline')
 logger.info(
     f'type={type(pipe_new)}, a_constant={pipe_new.a_constant}, init_constant={pipe_new.init_constant}'
+    f'accelerator gradient_accumulation_steps={pipe.auto_regist_save_load.gradient_accumulation_steps}'
 )
 logger.info(f'keys={list(pipe_new.__dict__.keys())}')
