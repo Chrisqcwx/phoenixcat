@@ -1,7 +1,7 @@
 import os
 import hashlib
 
-package_name = 'utilsbox'
+package_name = 'phoenixcat'
 package_name_upper = package_name.upper()
 
 USER_NAME = os.getlogin()

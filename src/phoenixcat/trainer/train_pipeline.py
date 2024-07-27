@@ -98,56 +98,6 @@ class TrainPipelineMixin(PipelineMixin):
         self.training_config = training_config
         self._set_seed(seed)
 
-    def epoch_function(self, order=0, interval: int | str = 1):
-        def wrapper(func):
-            # @functools.wraps(func)
-            def wrapped_func(*args, **kwargs):
-                nonlocal interval
-                if isinstance(interval, str):
-                    interval = getattr(self.training_config, interval)
-                if (
-                    self.flag.epoch % interval == 0
-                    or self.flag.epoch == self.training_config.max_epoches - 1
-                ):
-                    func(self, *args, **kwargs)
-
-            self._epoch_functions.append((order, func))
-            return wrapped_func
-
-        return wrapper
-
-    def step_function(self=None, order=0, interval: int | str = 1):
-
-        def wrapper(func):
-            @functools.wraps(func)
-            def wrapped_func(self: "TrainPipelineMixin", *args, **kwargs):
-                nonlocal interval
-                if isinstance(interval, str):
-                    interval = getattr(self.training_config, interval)
-                if (
-                    self.flag.step % interval == 0
-                    or self.flag.step == self.training_config.max_steps - 1
-                ):
-                    func(self, *args, **kwargs)
-
-            self._step_functions.append((order, func))
-            return wrapped_func
-
-        return wrapper
-
-    def simple_wrap(self, func=None):
-        if func is None:
-            func = self
-        self = func.__self__
-        print(func)
-        print(self)
-
-        def _inner(*args, **kwargs):
-            return func(*args, **kwargs)
-
-        return _inner
-
-    @simple_wrap
     def reset_flag(self):
         self.flag.epoch = 0
         self.flag.step = 0
@@ -165,17 +115,3 @@ class TrainPipelineMixin(PipelineMixin):
     def _set_seed(self, seed):
         self.seed = seed
         seed_every_thing(seed)
-
-
-Accelerator
-
-
-class BB(TrainPipelineMixin):
-
-    # epoch_function = TrainPipelineMixin.epoch_function
-
-    # @epoch_function(order=0, interval='save_interval')
-    # def func(self):
-    #     pass
-
-    pass

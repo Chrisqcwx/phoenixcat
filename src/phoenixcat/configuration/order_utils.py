@@ -95,6 +95,11 @@ class ExecuteOrderMixin:
                 func._execute_cnt += 1
                 return ret
 
+            def reset_cnt():
+                func._execute_cnt = 0
+
+            func.reset_cnt = reset_cnt
+
             # print(f'set name {name}')
             self.__setattr__(func.__name__, wrapper)
 
@@ -103,3 +108,10 @@ class ExecuteOrderMixin:
         self._build_execute_order()
         # print(self._execute_main_method)
         # print(self._execute_order_before)
+
+    def reset_execute_cnt(self, reset_tag=None):
+        if reset_tag is None:
+            for name, func in self._execute_main_method.items():
+                func.reset_cnt()
+        else:
+            self._execute_main_method[reset_tag].reset_cnt()
