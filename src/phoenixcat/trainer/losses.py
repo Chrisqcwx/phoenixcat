@@ -53,6 +53,10 @@ _LOSS_MAPPING = {
 }
 
 
+def register_loss_function(name: str, fn: Callable):
+    _LOSS_MAPPING[name] = fn
+
+
 class TorchLoss:
     """Find loss function from 'torch.nn.functional' and 'torch.nn'"""
 

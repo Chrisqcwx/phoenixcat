@@ -140,6 +140,12 @@ for i in range(4):
     logger.info(f'------ epoch {i} ---------')
     pipe.main_epoch(f'epoch {i} main execute')
 
+logger.info(f'------ test execute cnt ---------')
+logger.info(f'epoch cnt={pipe.main_epoch.__wrapped__._execute_cnt}')
+pipe.reset_execute_cnt('epoch')
+logger.info(f'epoch cnt={pipe.main_epoch.__wrapped__._execute_cnt}')
+
+
 logger.info(f'------ test device and dtype ---------')
 logger.info('origin')
 logger.info(f'pipeline device={pipe.device}, dtype={pipe.dtype}')
