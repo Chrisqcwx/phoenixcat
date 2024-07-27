@@ -158,9 +158,12 @@ for i in range(4):
     pipe.main_epoch(f'epoch {i} main execute')
 
 logger.info(f'------ test execute cnt ---------')
-logger.info(f'epoch cnt={pipe.main_epoch.__wrapped__._execute_cnt}')
-pipe.reset_execute_cnt('epoch')
-logger.info(f'epoch cnt={pipe.main_epoch.__wrapped__._execute_cnt}')
+epoch_cnt = pipe.execute_counts['epoch']
+logger.info(f'epoch cnt={epoch_cnt}')
+pipe.reset_execute_flag('epoch')
+logger.info('reset epoch cnt')
+epoch_cnt = pipe.execute_counts['epoch']
+logger.info(f'epoch cnt={epoch_cnt}')
 
 
 logger.info(f'------ test device and dtype ---------')

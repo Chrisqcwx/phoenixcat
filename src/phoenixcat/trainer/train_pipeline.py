@@ -72,20 +72,22 @@ class TrainingOutputFilesManager:
     checkpoints_dir: str | os.PathLike = "checkpoints"
 
 
-@config_dataclass_wrapper(config_name='flags.json')
-@dataclass
-class TrainingFlag:
-    step: int = 0
-    epoch: int = 0
+# @config_dataclass_wrapper(config_name='flags.json')
+# @dataclass
+# class TrainingFlag:
+#     step: int = 0
+#     epoch: int = 0
 
 
 class TrainPipelineMixin(PipelineMixin):
 
     output_files_manager: TrainingOutputFilesManager = TrainingOutputFilesManager()
-    flag: TrainingFlag = TrainingFlag()
+    # flag: TrainingFlag = TrainingFlag()
 
     _optimization_manager: OptimizationManager = OptimizationManager()
     _optimization_save_folder = 'optimization'
+
+    training = False
 
     def __init__(
         self,
@@ -105,10 +107,6 @@ class TrainPipelineMixin(PipelineMixin):
     @property
     def logger(self):
         return self._logger
-
-    def reset_flag(self):
-        self.flag.epoch = 0
-        self.flag.step = 0
 
     def set_training_config(self, training_config: TrainingConfig):
         self.training_config = training_config
@@ -137,3 +135,24 @@ class TrainPipelineMixin(PipelineMixin):
     def _set_seed(self, seed):
         self.seed = seed
         seed_every_thing(seed)
+
+    def register_optimization(self, tag, params):
+        self._optimization_manager.register_optimization(tag, params)
+
+    def train(self, training: bool = True):
+        self.training = training
+        if training:
+            self.set_to_train_mode()
+        else:
+            self.set_to_eval_mode()
+
+    def eval(self):
+        self.train(False)
+
+    @abstractmethod
+    def set_to_train_mode(self):
+        pass
+
+    @abstractmethod
+    def set_to_eval_mode(self):
+        pass
