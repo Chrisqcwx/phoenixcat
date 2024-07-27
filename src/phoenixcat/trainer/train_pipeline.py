@@ -27,8 +27,9 @@ from diffusers.utils import is_accelerate_available
 if is_accelerate_available():
     from accelerate import Accelerator
 
-from ..configuration import PipelineMixin, config_dataclass_wrapper
+from ..configuration import PipelineMixin, config_dataclass_wrapper, only_main_process
 from ..random import seed_every_thing
+from .optimization import OptimizationManager
 
 logger = logging.getLogger(__name__)
 
@@ -83,20 +84,27 @@ class TrainPipelineMixin(PipelineMixin):
     output_files_manager: TrainingOutputFilesManager = TrainingOutputFilesManager()
     flag: TrainingFlag = TrainingFlag()
 
-    ignore_for_pipeline = {'accelerator'}
+    _optimization_manager: OptimizationManager = OptimizationManager()
+    _optimization_save_folder = 'optimization'
 
     def __init__(
         self,
         output_dir: str,
         training_config: TrainingConfig,
         seed: int = 0,
-        accelerator: Optional["Accelerator" | Dict] = None,
+        accelerator: Optional["Accelerator"] = None,
     ) -> None:
         super().__init__()
         self.register_accelerator(accelerator)
         self.output_dir = output_dir
         self.training_config = training_config
         self._set_seed(seed)
+
+        self._logger = logging.getLogger(self.__class__.__name__)
+
+    @property
+    def logger(self):
+        return self._logger
 
     def reset_flag(self):
         self.flag.epoch = 0
@@ -108,9 +116,23 @@ class TrainPipelineMixin(PipelineMixin):
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path: str, **kwargs):
         output_dir = kwargs.pop('output_dir', pretrained_model_name_or_path)
-        return super().from_pretrained(
+        self = super().from_pretrained(
             pretrained_model_name_or_path, output_dir=output_dir, **kwargs
         )
+        optimization_save_path = os.path.join(
+            self.output_dir, self._optimization_save_folder
+        )
+        self._optimization_manager.load_state_dict_from_file(optimization_save_path)
+
+        return self
+
+    @only_main_process
+    def save_pretrained(self, save_directory: str | os.PathLike):
+        optimization_save_path = os.path.join(
+            self.output_dir, self._optimization_save_folder
+        )
+        self._optimization_manager.save_state_dict_to_file(optimization_save_path)
+        super().save_pretrained(save_directory)
 
     def _set_seed(self, seed):
         self.seed = seed
