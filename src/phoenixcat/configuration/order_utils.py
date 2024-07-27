@@ -44,6 +44,8 @@ class ExecuteOrderMixin:
     _execute_order_before = None
     _execute_order_after = None
 
+    execute_counts = None
+
     @property
     @abstractmethod
     def is_end() -> bool:
@@ -68,10 +70,17 @@ class ExecuteOrderMixin:
             interval = get_attribute_from_obj(self, interval)
         return interval
 
+    def reset_execute_flag(self, tag=None):
+        if tag is None:
+            self.execute_counts = defaultdict(lambda: 0)
+        else:
+            self.execute_counts[tag] = 0
+
     def _build_execute_order(self):
         self._execute_main_method = {}
         self._execute_order_before = defaultdict(list)
         self._execute_order_after = defaultdict(list)
+        self.execute_counts = defaultdict(lambda: 0)
         for name, func in self.__class__.__dict__.items():
             # print(f'has name: {name}', callable(func))
             if callable(func):
@@ -89,31 +98,26 @@ class ExecuteOrderMixin:
         for stage in self._execute_order_after.keys():
             self._execute_order_after[stage].sort(key=lambda x: x._order_info['order'])
 
-        for name, func in self._execute_main_method.items():
+        for tag, func in self._execute_main_method.items():
 
-            func._execute_cnt = 0
+            # func._execute_cnt = 0
 
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
                 is_end = self.is_end
 
-                for _f in self._execute_order_before[name]:
+                for _f in self._execute_order_before[tag]:
                     intervel = self._get_interval(_f)
-                    if is_end or (func._execute_cnt % intervel == 0):
+                    if is_end or (self.execute_counts[tag] % intervel == 0):
                         _f(self)
                 ret = func(self, *args, **kwargs)
-                for _f in self._execute_order_after[name]:
+                for _f in self._execute_order_after[tag]:
                     intervel = self._get_interval(_f)
-                    if is_end or (func._execute_cnt % intervel == 0):
+                    if is_end or (self.execute_counts[tag] % intervel == 0):
                         _f(self)
 
-                func._execute_cnt += 1
+                self.execute_counts[tag] += 1
                 return ret
-
-            def reset_cnt():
-                func._execute_cnt = 0
-
-            func.reset_cnt = reset_cnt
 
             # print(f'set name {name}')
             self.__setattr__(func.__name__, wrapper)
@@ -123,10 +127,3 @@ class ExecuteOrderMixin:
         self._build_execute_order()
         # print(self._execute_main_method)
         # print(self._execute_order_before)
-
-    def reset_execute_cnt(self, reset_tag=None):
-        if reset_tag is None:
-            for name, func in self._execute_main_method.items():
-                func.reset_cnt()
-        else:
-            self._execute_main_method[reset_tag].reset_cnt()

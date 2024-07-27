@@ -110,6 +110,7 @@ class PipelineMixin(ConfigMixin, AccelerateMixin, ExecuteOrderMixin):
         # self.register_modules(pipeline_record=PipelineRecord())
 
         self.register_version()
+        self.register_save_values(execute_counts=self.execute_counts)
 
     def register_version(self):
         self.register_save_values(_version=VersionInfo.create(clear_package=True))
