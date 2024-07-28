@@ -29,77 +29,51 @@ if is_accelerate_available():
 
 from ..configuration import PipelineMixin, config_dataclass_wrapper, only_main_process
 from ..random import seed_every_thing
-from .optimization import OptimizationManager
+from .optimization import OptimizationManager, SingleOptimizationManager
 
 logger = logging.getLogger(__name__)
 
 
-@config_dataclass_wrapper(config_name='training_config.json')
-@dataclass
-class TrainingConfig:
-    batch_size: int
-    test_batch_size: int = None
-    max_epoches: int = None
-    max_steps: int = None
+def register_evaluate_function(func):
 
-    def __post_init__(self) -> None:
-        if self.test_batch_size is None:
-            logger.warning(
-                f"`test_batch_size` is None, auto set to `batch_size` ({self.batch_size})."
-            )
-            self.test_batch_size = self.batch_size
-        if (self.max_epoches is None) and (self.max_steps is None):
-            logger.warning(
-                f"Both `max_epochs` and `max_steps` are None. "
-                f"`max_epochs` is automatically set to 10000."
-            )
-            self.max_epoches = 10000
-        elif (self.max_epoches is not None) and (self.max_steps is not None):
-            logger.warning(
-                f"Both `max_epochs` and `max_steps` are given. "
-                f"Training will end when either limit is reached."
-            )
+    @functools.wraps(func)
+    def wrapper(self: TrainPipelineMixin, *args, **kwargs):
+        if self.training is not False:
+            self.set_to_eval_mode()
+        return func(self, *args, **kwargs)
+
+    return wrapper
 
 
-@config_dataclass_wrapper(config_name='train_outputfiles.json')
-@dataclass
-class TrainingOutputFilesManager:
-    logging_file: str | os.PathLike = "debug.log"
-    version_file: str | os.PathLike = "version.json"
-    logging_dir: str | os.PathLike = "logs"
-    tensorboard_dir: str | os.PathLike = "tensorboard"
-    wandb_dir: str | os.PathLike = "wandb"
-    checkpoints_dir: str | os.PathLike = "checkpoints"
+def register_train_function(func):
 
+    @functools.wraps(func)
+    def wrapper(self: TrainPipelineMixin, *args, **kwargs):
+        if self.training is not True:
+            self.set_to_train_mode()
+        # logger.critical(f'execute {func.__name__} {self.execute_counts}')
+        return func(self, *args, **kwargs)
 
-# @config_dataclass_wrapper(config_name='flags.json')
-# @dataclass
-# class TrainingFlag:
-#     step: int = 0
-#     epoch: int = 0
+    return wrapper
 
 
 class TrainPipelineMixin(PipelineMixin):
 
-    output_files_manager: TrainingOutputFilesManager = TrainingOutputFilesManager()
-    # flag: TrainingFlag = TrainingFlag()
-
-    _optimization_manager: OptimizationManager = OptimizationManager()
+    optimization_manager: OptimizationManager = OptimizationManager()
     _optimization_save_folder = 'optimization'
 
-    training = False
+    _training = None
 
     def __init__(
         self,
         output_dir: str,
-        training_config: TrainingConfig,
         seed: int = 0,
         accelerator: Optional["Accelerator"] = None,
     ) -> None:
         super().__init__()
         self.register_accelerator(accelerator)
+        self.register_save_values(execute_counts=self.execute_counts)
         self.output_dir = output_dir
-        self.training_config = training_config
         self._set_seed(seed)
 
         self._logger = logging.getLogger(self.__class__.__name__)
@@ -108,8 +82,17 @@ class TrainPipelineMixin(PipelineMixin):
     def logger(self):
         return self._logger
 
-    def set_training_config(self, training_config: TrainingConfig):
-        self.training_config = training_config
+    @property
+    def training(self):
+        return self._training
+
+    @staticmethod
+    def register_training_function(func):
+        return register_train_function(func)
+
+    @staticmethod
+    def register_evaluate_function(func):
+        return register_evaluate_function(func)
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path: str, **kwargs):
@@ -120,7 +103,7 @@ class TrainPipelineMixin(PipelineMixin):
         optimization_save_path = os.path.join(
             self.output_dir, self._optimization_save_folder
         )
-        self._optimization_manager.load_state_dict_from_file(optimization_save_path)
+        self.optimization_manager.load_state_dict_from_file(optimization_save_path)
 
         return self
 
@@ -129,25 +112,27 @@ class TrainPipelineMixin(PipelineMixin):
         optimization_save_path = os.path.join(
             self.output_dir, self._optimization_save_folder
         )
-        self._optimization_manager.save_state_dict_to_file(optimization_save_path)
+        self.optimization_manager.save_state_dict_to_file(optimization_save_path)
         super().save_pretrained(save_directory)
 
     def _set_seed(self, seed):
         self.seed = seed
         seed_every_thing(seed)
 
-    def register_optimization(self, tag, params):
-        self._optimization_manager.register_optimization(tag, params)
+    def register_optimization(self, tag, params, optimization_config):
+        self.optimization_manager.register_optimization(
+            tag, params, optimization_config
+        )
 
-    def train(self, training: bool = True):
-        self.training = training
-        if training:
-            self.set_to_train_mode()
-        else:
-            self.set_to_eval_mode()
+    # def train(self, training: bool = True):
+    #     self._training = training
+    #     if training:
+    #         self.set_to_train_mode()
+    #     else:
+    #         self.set_to_eval_mode()
 
-    def eval(self):
-        self.train(False)
+    # def eval(self):
+    #     self.train(False)
 
     @abstractmethod
     def set_to_train_mode(self):
@@ -156,3 +141,22 @@ class TrainPipelineMixin(PipelineMixin):
     @abstractmethod
     def set_to_eval_mode(self):
         pass
+
+    def accelerator_prepare(self, *args, device_placement=None):
+        result = []
+        for to_prepare in args:
+            if isinstance(to_prepare, (OptimizationManager, SingleOptimizationManager)):
+                to_prepare.accelerator_prepare(
+                    self.accelerator, device_placement=device_placement
+                )
+            else:
+                to_prepare = self.accelerator.prepare(to_prepare)
+            result.append(to_prepare)
+
+        return result
+
+    def backward(self, loss):
+        if self.accelerator is not None:
+            self.accelerator.backward(loss)
+        else:
+            loss.backward()

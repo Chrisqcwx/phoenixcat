@@ -21,6 +21,7 @@ import importlib
 import logging
 from collections import ChainMap
 from dataclasses import dataclass
+from tqdm import tqdm
 from typing import Any, Dict, List, Optional, Union
 
 import torch
@@ -111,13 +112,10 @@ class PipelineMixin(ConfigMixin, AccelerateMixin, ExecuteOrderMixin):
 
         self.register_version()
         self.register_save_values(execute_counts=self.execute_counts)
+        self.accelerator
 
     def register_version(self):
         self.register_save_values(_version=VersionInfo.create(clear_package=True))
-
-    def register_logger(self, logger_config: Dict = None):
-        if logger_config is None:
-            logger_config = {}
 
     @only_main_process
     def save_pretrained(
@@ -177,7 +175,8 @@ class PipelineMixin(ConfigMixin, AccelerateMixin, ExecuteOrderMixin):
                 update_config_dict = self._pipeline_record.set(name, value)
                 self.register_to_config(**update_config_dict)
 
-            ConfigMixin.__setattr__(self, name, value)
+            if not hasattr(self, name):
+                ConfigMixin.__setattr__(self, name, value)
 
     def to(self, *args, **kwargs):
         dtype = kwargs.pop("dtype", None)
@@ -265,3 +264,9 @@ class PipelineMixin(ConfigMixin, AccelerateMixin, ExecuteOrderMixin):
                 return param.dtype
 
         return torch.float32
+
+    def tqdm(self, iterable, **kwargs):
+        disable = kwargs.pop("disable", False)
+        if self.accelerator is not None:
+            disable = not self.accelerator.is_local_main_process or disable
+        return tqdm(iterable=iterable, disable=disable, **kwargs)

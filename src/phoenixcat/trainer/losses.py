@@ -19,6 +19,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from ..configuration import auto_register_save_load
+
 
 def max_margin_loss(out, iden):
     real = out.gather(1, iden.unsqueeze(1)).squeeze(1)
@@ -57,10 +59,11 @@ def register_loss_function(name: str, fn: Callable):
     _LOSS_MAPPING[name] = fn
 
 
+@auto_register_save_load
 class TorchLoss:
     """Find loss function from 'torch.nn.functional' and 'torch.nn'"""
 
-    def __init__(self, loss_fn: str | Callable, *args, **kwargs) -> None:
+    def __init__(self, loss_fn: str | Callable, **kwargs) -> None:
         # super().__init__()
         self.fn = None
         if isinstance(loss_fn, str):
@@ -70,12 +73,12 @@ class TorchLoss:
                 module = importlib.import_module('torch.nn.functional')
                 fn = getattr(module, loss_fn, None)
                 if fn is not None:
-                    self.fn = lambda *arg, **kwd: fn(*arg, *args, **kwd, **kwargs)
+                    self.fn = lambda *arg, **kwd: fn(*arg, **kwd, **kwargs)
                 else:
                     module = importlib.import_module('torch.nn')
                     t = getattr(module, loss_fn, None)
                     if t is not None:
-                        self.fn = t(*args, **kwargs)
+                        self.fn = t(**kwargs)
                 if self.fn is None:
                     raise RuntimeError(f'loss_fn {loss_fn} not found.')
         else:

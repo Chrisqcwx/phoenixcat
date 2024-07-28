@@ -6,7 +6,6 @@ import json
 from dataclasses import dataclass
 from typing import Dict, Iterable, Callable
 
-os.environ["WANDB_MODE"] = "offline"
 
 import torch
 import torch.utils.data

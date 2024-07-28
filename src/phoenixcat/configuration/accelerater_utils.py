@@ -16,16 +16,43 @@ import functools
 import logging
 from typing import Dict
 
+import torch
+from torch import compile
+from torch.nn.parallel import DataParallel, DistributedDataParallel
+
 import diffusers
-from diffusers.utils import is_accelerate_available
+from diffusers.utils import is_accelerate_available, is_torch_version
+
+from .autosave_utils import auto_register_save_load
 
 logger = logging.getLogger(__name__)
 
 if is_accelerate_available():
     import accelerate
-    from accelerate import Accelerator
+    from accelerate import Accelerator, DataLoaderConfiguration
+
+    auto_register_save_load(DataLoaderConfiguration)
+
+    auto_register_save_load(
+        Accelerator,
+        ignore_list=[
+            'dispatch_batches',
+            'split_batches',
+            'even_batches',
+            'use_seedable_sampler',
+        ],
+    )
 else:
     accelerate = None
+
+
+def is_compiled_module(module):
+    """
+    Check whether the module was compiled with torch.compile()
+    """
+    if is_torch_version("<", "2.0.0") or not hasattr(torch, "_dynamo"):
+        return False
+    return isinstance(module, torch._dynamo.eval_frame.OptimizedModule)
 
 
 def only_local_main_process(fn):
@@ -95,3 +122,23 @@ class AccelerateMixin:
     def wait_for_everyone(self):
         if self.accelerator is not None:
             self.accelerator.wait_for_everyone()
+
+    def accelerator_prepare(self, *args, device_placement=None):
+        if self.accelerator is not None:
+            self.accelerator.prepare(*args, device_placement=device_placement)
+
+    def unwrap_model(self, model):
+        if self.accelerator is not None:
+            return self.accelerator.unwrap_model(model)
+
+        if is_compiled_module(model):
+            model = model._orig_mod
+
+        if isinstance(model, (DataParallel, DistributedDataParallel)):
+            model = model.module
+
+        return model
+
+    def accelerator_log(self, values: dict, step: int | None = None):
+        if self.accelerator is not None:
+            self.accelerator.log(values, step=step)
