@@ -23,3 +23,10 @@ ASSETS_CACHE = os.getenv(
 )
 
 os.makedirs(ASSETS_CACHE, exist_ok=True)
+
+
+default_config_path = os.path.join(HOME, "config")
+
+CONFIG_HOME = os.getenv(f"{package_name_upper}_CONFIG_PATH", default_config_path)
+
+os.makedirs(CONFIG_HOME, exist_ok=True)

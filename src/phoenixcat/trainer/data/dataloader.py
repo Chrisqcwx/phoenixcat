@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Dict
 
 import torch.distributed
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 
 

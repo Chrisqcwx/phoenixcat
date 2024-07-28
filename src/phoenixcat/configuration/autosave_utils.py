@@ -41,7 +41,7 @@ def get_init_parameters(cls, pop_kwargs=False):
 
 
 def split_init_other_parameters(cls, parameters):
-    init_parameters = get_init_parameters(cls).keys()
+    init_parameters = get_init_parameters(cls, pop_kwargs=True).keys()
     init_results = {k: v for k, v in parameters.items() if k in init_parameters}
     other_results = {k: v for k, v in parameters.items() if k not in init_parameters}
     return init_results, other_results
@@ -247,10 +247,20 @@ def auto_register_save_load(
     @classmethod
     def from_pretrained(cls, pretrain_name_or_path, **kwargs):
         save_kwargs = AutoSaver.load(pretrain_name_or_path)
-        save_kwargs = {**save_kwargs, **kwargs}
-        init_kwargs, other_kwargs = split_init_other_parameters(cls, save_kwargs)
-        self = cls(**init_kwargs)
-        for key, value in other_kwargs.items():
+        # save_kwargs = {**save_kwargs, **kwargs}
+        # init_kwargs, other_kwargs = split_init_other_parameters(cls, save_kwargs)
+        init_kwargs = save_kwargs
+        residule_kwargs = {}
+        for key, value in kwargs.items():
+            if key in init_kwargs:
+                init_kwargs[key] = value
+            else:
+                residule_kwargs[key] = value
+        residule_init_kwargs, residule_other_kwargs = split_init_other_parameters(
+            cls, residule_kwargs
+        )
+        self = cls(**init_kwargs, **residule_init_kwargs)
+        for key, value in residule_other_kwargs.items():
             setattr(self, key, value)
         return self
 
@@ -264,3 +274,5 @@ def auto_register_save_load(
 
     cls.from_pretrained = from_pretrained
     cls.save_pretrained = save_pretrained
+
+    return cls

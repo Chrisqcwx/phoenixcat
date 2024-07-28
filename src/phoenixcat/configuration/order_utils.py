@@ -60,7 +60,7 @@ class ExecuteOrderMixin:
 
     @property
     @abstractmethod
-    def is_end() -> bool:
+    def is_end(self) -> bool:
         pass
 
     @staticmethod
@@ -97,6 +97,10 @@ class ExecuteOrderMixin:
             # print(f'has name: {name}', callable(func))
             if callable(func):
                 if hasattr(func, '_main_tag'):
+                    if func._main_tag in self._execute_main_method:
+                        raise ValueError(
+                            f'Already have main method with tag {func._main_tag}'
+                        )
                     self._execute_main_method[func._main_tag] = func
                 if hasattr(func, '_order_info'):
                     if func._order_info['execute_stage'] == 'before':
@@ -115,20 +119,20 @@ class ExecuteOrderMixin:
             # func._execute_cnt = 0
 
             @functools.wraps(func)
-            def wrapper(*args, **kwargs):
+            def wrapper(*args, _tag=tag, _func=func, **kwargs):
                 is_end = self.is_end
 
-                for _f in self._execute_order_before[tag]:
+                for _f in self._execute_order_before[_tag]:
                     intervel = self._get_interval(_f)
-                    if is_end or (self.execute_counts[tag] % intervel == 0):
+                    if is_end or (self.execute_counts[_tag] % intervel == 0):
                         _f(self)
-                ret = func(self, *args, **kwargs)
-                for _f in self._execute_order_after[tag]:
+                ret = _func(self, *args, **kwargs)
+                for _f in self._execute_order_after[_tag]:
                     intervel = self._get_interval(_f)
-                    if is_end or (self.execute_counts[tag] % intervel == 0):
+                    if is_end or (self.execute_counts[_tag] % intervel == 0):
                         _f(self)
 
-                self.execute_counts[tag] += 1
+                self.execute_counts[_tag] += 1
                 return ret
 
             # print(f'set name {name}')
