@@ -10,7 +10,7 @@ setup(
     version="dev:0.2.0",
     author="Hongyao Yu, Sijin Yu",
     author_email="yuhongyao@stu.hit.edu.cn, eeyusijin@mail.scut.edu.cn",
-    description="An enhanced infrastructure library for PyTorch and Hugging Face.",
+    description="An enhanced infrastructure library for PyTorch.",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/Chrisqcwx/phoenixcat",
