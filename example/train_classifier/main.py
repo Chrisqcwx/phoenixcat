@@ -1,4 +1,6 @@
 import os
+import argparse
+import logging
 from accelerate import Accelerator
 import torch
 from torch.utils.data import DataLoader
@@ -13,25 +15,16 @@ from torchvision.transforms import (
 )
 
 from phoenixcat.models.classifiers import TorchvisionClassifier, BaseImageClassifier
-from phoenixcat.configuration import register_to_pipeline_init, only_main_process
+from phoenixcat.configuration import register_to_pipeline_init, auto_create_cls
 from phoenixcat.trainer.train_pipeline import TrainPipelineMixin
 from phoenixcat.trainer.optimization import OptimizationConfig
 from phoenixcat.trainer.losses import TorchLoss
+from phoenixcat.trainer.data import getDataLoader
 from phoenixcat.logger import init_logger
-
+from phoenixcat.parser import ConfigParser
 from phoenixcat.data import DictAccumulator
 
-output_dir = './test_output'
-wandb_name = "example_train"
-project_name = "example_train"
-
-cifar_root = '<fill it>'
-
-import logging
-
 logger = logging.getLogger(__name__)
-
-init_logger(os.path.join(output_dir, 'train.log'))
 
 
 class ClassifierTrainPipeline(TrainPipelineMixin):
@@ -162,51 +155,92 @@ class ClassifierTrainPipeline(TrainPipelineMixin):
         return self.execute_counts['epoch'] == self._max_epoch_num - 1
 
 
-accelerator = Accelerator(log_with="wandb")
+def arg_parse():
 
-model = TorchvisionClassifier('resnet50', num_classes=100, resolution=32)
+    parser = argparse.ArgumentParser(description='train classifier')
+    parser.add_argument('--config', '-c', type=str, default='config.yaml')
+    parser.add_argument('--output', '-o', type=str, default='./output')
+    parser.add_argument('--cuda', '-g', type=str, default=None)
+    return parser.parse_args()
 
 
-epoch_num = 100
-validation_interval = 1
-# save_checkpoint_interval = 20
-save_train_status_interval = 20
+def main(config: ConfigParser, output_dir):
 
-trainset = CIFAR100(
-    cifar_root,
-    train=True,
-    transform=Compose([RandomHorizontalFlip(), ToTensor()]),
-)
+    init_logger(os.path.join(output_dir, 'train.log'))
+    model = config.create_model()
+    optimization_config = config.create_optimization_config()
+    try:
+        accelerator = config.create_accelerator()
 
-testset = CIFAR100(cifar_root, train=False, transform=ToTensor())
+    except Exception as e:
+        accelerator = None
 
-batch_size = 32
-trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True)
-valloader = DataLoader(testset, batch_size=batch_size, shuffle=False)
+    config.cd('train')
 
-optimization_config = OptimizationConfig(
-    'SGD', {'lr': 1e-2}, 'StepLR', {'step_size': 50, 'gamma': 0.25}
-)
+    train_pipeline = auto_create_cls(
+        ClassifierTrainPipeline,
+        config.top,
+        output_dir=output_dir,
+        model=model,
+        optimization_config=optimization_config,
+        accelerator=accelerator,
+    )
 
-train_pipeline = ClassifierTrainPipeline(
-    output_dir,
-    model,
-    optimization_config,
-    validation_interval=validation_interval,
-    # save_checkpoint_interval=save_checkpoint_interval,
-    save_train_status_interval=save_train_status_interval,
-    accelerator=accelerator,
-)
+    trainset = config.create_from_name(
+        'torchvision.datasets.CIFAR100',
+        kwargs={
+            'root': config.get('dataset_path'),
+            'train': True,
+            'download': True,
+            'transform': config.create_transform('train_transform'),
+        },
+    )
 
-accelerator.init_trackers(
-    project_name=project_name,
-    init_kwargs={
-        "wandb": {
-            "name": wandb_name,
-            "dir": output_dir,
-            "config": train_pipeline.config,
-        }
-    },
-)
+    valset = config.create_from_name(
+        'torchvision.datasets.CIFAR100',
+        kwargs={
+            'root': config.get('dataset_path'),
+            'train': False,
+            'download': True,
+            'transform': config.create_transform('val_transform'),
+        },
+    )
 
-train_pipeline.train_function(epoch_num, trainloader, valloader)
+    batch_size = config.get('train_batch_size')
+    test_batch_size = config.get('test_batch_size', batch_size)
+    num_workers = config.get('num_workers', 4)
+
+    train_loader = getDataLoader(
+        trainset, batch_size=batch_size, num_workers=num_workers
+    )
+    val_loader = getDataLoader(
+        valset, batch_size=test_batch_size, num_workers=num_workers
+    )
+
+    config.cd(absolute=True)
+
+    if accelerator is not None:
+        project_name = config.get('project_name', 'train_classifier')
+        accelerator.init_trackers(
+            project_name=project_name,
+            init_kwargs={
+                "wandb": {
+                    "name": config.get("wandb_name", project_name),
+                    "dir": output_dir,
+                    "config": config.config,
+                }
+            },
+        )
+
+    config.save_config(os.path.join(output_dir, 'test_config.yaml'))
+    train_pipeline.train_function(config, config["epochs"], train_loader, val_loader)
+
+
+if __name__ == '__main__':
+    args = arg_parse()
+    # print(args.cuda, type(args.cuda), args.cuda is None)
+    if args.cuda is not None:
+        os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda
+
+    config = ConfigParser.from_config_file(args.config)
+    main(config, args.output)

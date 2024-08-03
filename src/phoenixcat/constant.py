@@ -30,3 +30,10 @@ default_config_path = os.path.join(HOME, "config")
 CONFIG_HOME = os.getenv(f"{package_name_upper}_CONFIG_PATH", default_config_path)
 
 os.makedirs(CONFIG_HOME, exist_ok=True)
+
+
+class ConfigSuffix:
+    json = ["json", "JSON", ".json", ".JSON"]
+    yaml = ["yaml", "YAML", "yml", "YML", ".yaml", ".YAML", ".yml", ".YML"]
+    ini = ["ini", "INI", ".ini", ".INI"]
+    py = ["py", "PY", ".py", ".PY"]

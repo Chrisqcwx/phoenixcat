@@ -47,6 +47,12 @@ def split_init_other_parameters(cls, parameters):
     return init_results, other_results
 
 
+def auto_create_cls(cls, config, **kwargs):
+    kwargs = {**{k: v for k, v in config.items() if k not in kwargs}, **kwargs}
+    init_kwargs, _ = split_init_other_parameters(cls, kwargs)
+    return cls(**init_kwargs)
+
+
 def _register_fn(_method_name, fn: str | Callable, cls=None):
 
     def _inner_wrapper(cls):

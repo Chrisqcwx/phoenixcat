@@ -24,4 +24,5 @@ from .autosave_utils import (
     get_init_parameters,
     split_init_other_parameters,
     auto_register_save_load,
+    auto_create_cls,
 )
