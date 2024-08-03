@@ -6,8 +6,13 @@
 Phoenixcat is an enhanced infrastructure library for PyTorch.
 
 ## Installation
+Install the library from PyPI:
+```bash
+pip install phoenixcat
 ```
-pip install https://github.com/Chrisqcwx/phoenixcat.git
+or install the latest version from GitHub:
+```
+pip install git+https://github.com/Chrisqcwx/phoenixcat.git
 ```
 
 
