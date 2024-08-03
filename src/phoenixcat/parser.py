@@ -16,7 +16,11 @@ class ConfigParser:
     Config parser class
     """
 
-    def __init__(self, config: Dict[str, Any], config_path: Optional[str] = None):
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        config_path: Optional[str] = None,
+    ):
         """
         Initialize the config parser
 
@@ -183,7 +187,7 @@ class ConfigParser:
         if kwargs is None:
             kwargs = {}
 
-        builder = get_obj_from_str(name)
+        builder = get_obj_from_str(name, raise_exception=True)
         return builder(**kwargs)
 
     def _create_transform_impl(self, name, kwargs: Dict):

@@ -1,6 +1,7 @@
 ---
 project_name: "train_resnet18_cifar100"
 wandb_name: "wandb_train_resnet18_cifar100"
+output_dir: "./test_train_resnet18_cifar100"
 
 model:
   name: "TorchvisionClassifier"
@@ -22,22 +23,23 @@ optimization:
 accelerator:
   log_with: wandb
 
-train:
+pipeline:
 # trainer params
   validation_interval: 1
   save_train_status_interval: 10
   loss_fn: "cross_entropy"
   seed: 0
+
 # data params
-  dataset_path: "../../../../datasets/cifar100"
-  train_transforms: 
-    RandomHorizontalFlip:
-      p: 0.5
-    ToTensor: null
-  val_transforms: 
-    ToTensor: null
-  train_batch_size: 128
-  val_batch_size: 128
-  num_workers: 4
+dataset_path: "../../../../datasets/cifar100"
+train_transforms: 
+  RandomHorizontalFlip:
+    p: 0.5
+  ToTensor: null
+val_transforms: 
+  ToTensor: null
+train_batch_size: 128
+val_batch_size: 128
+num_workers: 4
 # train function
-  epochs: 50
+epochs: 50

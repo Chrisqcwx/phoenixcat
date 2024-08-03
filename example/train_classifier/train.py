@@ -164,91 +164,95 @@ def arg_parse():
     return parser.parse_args()
 
 
-def main(config: ConfigParser, output_dir):
+class Cifar100ClassifierConfigParser(ConfigParser):
 
-    os.makedirs(output_dir, exist_ok=True)
+    def __init__(self, config, config_path: str | None = None):
+        super().__init__(config, config_path)
 
-    init_logger(os.path.join(output_dir, 'train.log'))
-    model = config.create_model()
-    optimization_config = config.create_optimization_config()
-    try:
-        accelerator = config.create_accelerator()
-        logger.info(f'use accelerator')
-    except Exception as e:
-        accelerator = None
-        logger.info(f'no accelerator')
+        self.output_dir = self.get('output_dir', './.output')
 
-    config.cd('train')
+        init_logger(os.path.join(self.output_dir, 'train.log'))
 
-    train_pipeline = auto_create_cls(
-        ClassifierTrainPipeline,
-        config.top,
-        output_dir=output_dir,
-        model=model,
-        optimization_config=optimization_config,
-        accelerator=accelerator,
-    )
-
-    trainset = config.create_from_name(
-        'torchvision.datasets.CIFAR100',
-        kwargs={
-            'root': config.get('dataset_path'),
-            'train': True,
-            'download': True,
-            'transform': config.create_transform('train_transforms'),
-        },
-    )
-
-    valset = config.create_from_name(
-        'torchvision.datasets.CIFAR100',
-        kwargs={
-            'root': config.get('dataset_path'),
-            'train': False,
-            'download': True,
-            'transform': config.create_transform('val_transforms'),
-        },
-    )
-
-    batch_size = config.get('train_batch_size')
-    test_batch_size = config.get('test_batch_size', batch_size)
-    num_workers = config.get('num_workers', 4)
-
-    train_loader = getDataLoader(
-        trainset,
-        batch_size=batch_size,
-        config={
-            'num_workers': num_workers,
-        },
-    )
-    val_loader = getDataLoader(
-        valset,
-        batch_size=test_batch_size,
-        config={
-            'num_workers': num_workers,
-        },
-    )
-
-    epoch_num = config.get('epochs')
-
-    config.cd(absolute=True)
-
-    if accelerator is not None:
-        project_name = config.get('project_name', 'train_classifier')
-        logger.info(f'init trackers with project name {project_name}')
-        init_kwargs = {
-            "wandb": {
-                "name": config.get("wandb_name", project_name),
-                "dir": output_dir,
-                "config": config.config,
-            }
-        }
-        accelerator.init_trackers(
-            project_name=project_name,
-            init_kwargs=init_kwargs,
+    def create_dataset(self, train=True, transforms=None):
+        return self.create_from_name(
+            'torchvision.datasets.CIFAR100',
+            kwargs={
+                'root': self.get('dataset_path'),
+                'train': train,
+                'download': True,
+                'transform': transforms,
+            },
         )
 
-    config.save_config(os.path.join(output_dir, 'test_config.yaml'))
-    train_pipeline.train_function(epoch_num, train_loader, val_loader)
+    def create_pipeline(self):
+        model = self.create_model()
+        optimization_config = self.create_optimization_config()
+        try:
+            accelerator = self.create_accelerator()
+            logger.info(f'use accelerator')
+
+            project_name = self.get('project_name', 'train_classifier')
+            logger.info(f'init trackers with project name {project_name}')
+            init_kwargs = {
+                "wandb": {
+                    "name": self.get("wandb_name", project_name),
+                    "dir": self.output_dir,
+                    "config": self.config,
+                }
+            }
+            accelerator.init_trackers(
+                project_name=project_name,
+                init_kwargs=init_kwargs,
+            )
+
+        except Exception as e:
+            accelerator = None
+            logger.info(f'no accelerator')
+
+        train_pipeline = auto_create_cls(
+            ClassifierTrainPipeline,
+            config['pipeline'],
+            output_dir=self.output_dir,
+            model=model,
+            optimization_config=optimization_config,
+            accelerator=accelerator,
+        )
+
+        return train_pipeline
+
+    def run(self):
+        train_pipeline = self.create_pipeline()
+
+        trainset = self.create_dataset(
+            train=True, transforms=self.create_transform("train_transforms")
+        )
+        valset = self.create_dataset(
+            train=False, transforms=self.create_transform("val_transforms")
+        )
+
+        batch_size = self.get('train_batch_size')
+        test_batch_size = self.get('test_batch_size', batch_size)
+        num_workers = self.get('num_workers', 4)
+        train_loader = getDataLoader(
+            trainset,
+            batch_size=batch_size,
+            config={
+                'num_workers': num_workers,
+            },
+        )
+        val_loader = getDataLoader(
+            valset,
+            batch_size=test_batch_size,
+            config={
+                'num_workers': num_workers,
+            },
+        )
+
+        epoch_num = self.get('epochs')
+
+        if train_pipeline.is_main_process:
+            self.save_config(os.path.join(self.output_dir, 'config.yaml'))
+        train_pipeline.train_function(epoch_num, train_loader, val_loader)
 
 
 if __name__ == '__main__':
@@ -257,5 +261,5 @@ if __name__ == '__main__':
     if args.cuda is not None:
         os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda
 
-    config = ConfigParser.from_config_file(args.config)
-    main(config, args.output)
+    config = Cifar100ClassifierConfigParser.from_config_file(args.config)
+    config.run()
