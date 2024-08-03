@@ -17,7 +17,7 @@ if is_accelerate_available():
 else:
     accelerate = None
 
-from . import constant
+from .. import constant
 from ..conversion import get_obj_from_str
 from ..logger.logging import init_logger
 from ..random._seeds import seed_every_thing
