@@ -34,22 +34,10 @@ def getDataLoader(
     batch_size: int,
     config: Dict,
     shuffle: bool = True,
-    seed: int = 0,
-    use_ddp: bool = False,
     device: str = "",
 ):
-    if use_ddp:
-        sampler = DistributedSampler(
-            dataset=dataset,
-            shuffle=shuffle,
-            seed=seed,
-            drop_last=config.get("drop_last", False),
-        )
-        shuffle = False
-        rank = torch.distributed.get_rank()
-        device = f"cuda:{rank}"
-    else:
-        sampler = None
+
+    sampler = None
 
     dataloader = DataLoader(
         dataset=dataset,

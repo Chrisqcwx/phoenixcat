@@ -6,7 +6,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def get_obj_from_str(strings: Union[str, Sequence[str]], reload=False):
+def get_obj_from_str(
+    strings: Union[str, Sequence[str]], reload=False, raise_exception=False
+):
     if not isinstance(strings, str):
         logger.debug(
             f"Recieve `strings` to be {strings} (type = {type(strings)}), not str."
@@ -21,6 +23,8 @@ def get_obj_from_str(strings: Union[str, Sequence[str]], reload=False):
 
     module = importlib.import_module(module)
     if not hasattr(module, cls):
+        if raise_exception:
+            raise AttributeError(f"Module `{module}` has no attribute `{cls}`")
         return None
     return getattr(module, cls)
 

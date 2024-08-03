@@ -16,7 +16,11 @@ class ConfigParser:
     Config parser class
     """
 
-    def __init__(self, config: Dict[str, Any], config_path: Optional[str] = None):
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        config_path: Optional[str] = None,
+    ):
         """
         Initialize the config parser
 
@@ -65,6 +69,9 @@ class ConfigParser:
 
     def __str__(self) -> str:
         return self.__repr__()
+
+    def __getitem__(self, key: str) -> Any:
+        return self.get(key)
 
     def cd(self, *keys: str, absolute=False):
         """
@@ -162,7 +169,13 @@ class ConfigParser:
         """
         import accelerate
 
+        if subfolder not in self.config:
+            return None
+
         config = copy.copy(self.visit(subfolder, absolute=absolute))
+        if config is None:
+            config = {}
+
         if 'dataloader_config' in config:
             dataloader_config = config['dataloader_config']
             dataloader_config = accelerate.DataLoaderConfiguration(**dataloader_config)
@@ -174,7 +187,7 @@ class ConfigParser:
         if kwargs is None:
             kwargs = {}
 
-        builder = get_obj_from_str(name)
+        builder = get_obj_from_str(name, raise_exception=True)
         return builder(**kwargs)
 
     def _create_transform_impl(self, name, kwargs: Dict):

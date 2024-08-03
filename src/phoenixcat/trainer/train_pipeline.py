@@ -143,6 +143,9 @@ class TrainPipelineMixin(PipelineMixin):
         pass
 
     def accelerator_prepare(self, *args, device_placement=None):
+        if self.accelerator is None:
+            return args
+
         result = []
         for to_prepare in args:
             if isinstance(to_prepare, (OptimizationManager, SingleOptimizationManager)):
