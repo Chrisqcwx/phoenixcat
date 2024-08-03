@@ -166,14 +166,17 @@ def arg_parse():
 
 def main(config: ConfigParser, output_dir):
 
+    os.makedirs(output_dir, exist_ok=True)
+
     init_logger(os.path.join(output_dir, 'train.log'))
     model = config.create_model()
     optimization_config = config.create_optimization_config()
     try:
         accelerator = config.create_accelerator()
-
+        logger.info(f'use accelerator')
     except Exception as e:
         accelerator = None
+        logger.info(f'no accelerator')
 
     config.cd('train')
 
@@ -192,7 +195,7 @@ def main(config: ConfigParser, output_dir):
             'root': config.get('dataset_path'),
             'train': True,
             'download': True,
-            'transform': config.create_transform('train_transform'),
+            'transform': config.create_transform('train_transforms'),
         },
     )
 
@@ -202,7 +205,7 @@ def main(config: ConfigParser, output_dir):
             'root': config.get('dataset_path'),
             'train': False,
             'download': True,
-            'transform': config.create_transform('val_transform'),
+            'transform': config.create_transform('val_transforms'),
         },
     )
 
@@ -211,29 +214,41 @@ def main(config: ConfigParser, output_dir):
     num_workers = config.get('num_workers', 4)
 
     train_loader = getDataLoader(
-        trainset, batch_size=batch_size, num_workers=num_workers
+        trainset,
+        batch_size=batch_size,
+        config={
+            'num_workers': num_workers,
+        },
     )
     val_loader = getDataLoader(
-        valset, batch_size=test_batch_size, num_workers=num_workers
+        valset,
+        batch_size=test_batch_size,
+        config={
+            'num_workers': num_workers,
+        },
     )
+
+    epoch_num = config.get('epochs')
 
     config.cd(absolute=True)
 
     if accelerator is not None:
         project_name = config.get('project_name', 'train_classifier')
+        logger.info(f'init trackers with project name {project_name}')
+        init_kwargs = {
+            "wandb": {
+                "name": config.get("wandb_name", project_name),
+                "dir": output_dir,
+                "config": config.config,
+            }
+        }
         accelerator.init_trackers(
             project_name=project_name,
-            init_kwargs={
-                "wandb": {
-                    "name": config.get("wandb_name", project_name),
-                    "dir": output_dir,
-                    "config": config.config,
-                }
-            },
+            init_kwargs=init_kwargs,
         )
 
     config.save_config(os.path.join(output_dir, 'test_config.yaml'))
-    train_pipeline.train_function(config, config["epochs"], train_loader, val_loader)
+    train_pipeline.train_function(epoch_num, train_loader, val_loader)
 
 
 if __name__ == '__main__':

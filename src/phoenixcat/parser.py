@@ -66,6 +66,9 @@ class ConfigParser:
     def __str__(self) -> str:
         return self.__repr__()
 
+    def __getitem__(self, key: str) -> Any:
+        return self.get(key)
+
     def cd(self, *keys: str, absolute=False):
         """
         Change directory in the config
@@ -162,7 +165,13 @@ class ConfigParser:
         """
         import accelerate
 
+        if subfolder not in self.config:
+            return None
+
         config = copy.copy(self.visit(subfolder, absolute=absolute))
+        if config is None:
+            config = {}
+
         if 'dataloader_config' in config:
             dataloader_config = config['dataloader_config']
             dataloader_config = accelerate.DataLoaderConfiguration(**dataloader_config)
