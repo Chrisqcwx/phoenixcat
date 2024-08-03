@@ -58,11 +58,6 @@ class ExecuteOrderMixin:
 
     execute_counts = None
 
-    @property
-    @abstractmethod
-    def is_end(self) -> bool:
-        pass
-
     @staticmethod
     def register_execute_order(
         tag: str,
@@ -120,16 +115,15 @@ class ExecuteOrderMixin:
 
             @functools.wraps(func)
             def wrapper(*args, _tag=tag, _func=func, **kwargs):
-                is_end = self.is_end
 
                 for _f in self._execute_order_before[_tag]:
                     intervel = self._get_interval(_f)
-                    if is_end or (self.execute_counts[_tag] % intervel == 0):
+                    if self.execute_counts[_tag] % intervel == 0:
                         _f(self)
                 ret = _func(self, *args, **kwargs)
                 for _f in self._execute_order_after[_tag]:
                     intervel = self._get_interval(_f)
-                    if is_end or (self.execute_counts[_tag] % intervel == 0):
+                    if self.execute_counts[_tag] % intervel == 0:
                         _f(self)
 
                 self.execute_counts[_tag] += 1

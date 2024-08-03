@@ -1,4 +1,3 @@
-import os
 from setuptools import setup, find_packages
 
 with open("README.md", "r", encoding="utf-8") as fh:
@@ -18,7 +17,7 @@ setup(
     packages=find_packages("src"),
     license="Apache 2.0 License",
     python_requires=">=3.8",
-    install_requires=["diffusers"],
+    install_requires=["torch", "torchvision", "diffusers"],
     classifiers=[
         "Development Status :: 2 - Pre-Alpha",
         "Intended Audience :: Developers",
