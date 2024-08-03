@@ -201,6 +201,9 @@ class OptimizationManager:
     def get_optimization(self, tag):
         return self.optimization_group[tag]
 
+    def __getitem__(self, tag):
+        return self.get_optimization(tag)
+
     def get_optimizer(self, tag):
         return self.optimization_group[tag].optimizer
 

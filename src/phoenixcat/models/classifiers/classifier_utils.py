@@ -22,6 +22,7 @@ from torchvision.transforms.functional import resize
 from diffusers.utils.outputs import BaseOutput
 
 from ..modeling_utils import ModelMixin, get_model_builder
+from ..output import parallel_enable_dataclass
 from ...configuration import extract_init_dict
 
 
@@ -46,6 +47,7 @@ class BaseImageModel(ModelMixin):
         return super(ModelMixin, self).__call__(images, *args, **kwargs)
 
 
+@parallel_enable_dataclass
 @dataclass
 class BaseImageClassifierOutput(BaseOutput):
     prediction: torch.Tensor
