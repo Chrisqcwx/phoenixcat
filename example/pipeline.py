@@ -1,4 +1,6 @@
 import os
+import sys
+sys.path.append("../src")
 import logging
 
 import torch
@@ -75,7 +77,7 @@ class TestPipeline(PipelineMixin):
         auto_regist_save_load,
     ):
 
-        super().__init__()
+        super().__init__(auto_regist_save_load)
         self.manager = manager
 
         self.register_save_values(init_constant=777)
@@ -84,55 +86,11 @@ class TestPipeline(PipelineMixin):
 
         self.dummy = DummyClass()
 
-    @property
-    def is_end(self):
-        return self.flag.epoch == self.train_config.max_epoches - 1
-
-    @PipelineMixin.register_execute_main(_epoch_tag)
-    def main_epoch(self, dummy_str):
-        logger.info(dummy_str)
-        self.flag.epoch += 1
-
-    @PipelineMixin.register_execute_order(
-        _epoch_tag, order=1, interval=1, execute_stage='before'
-    )
-    def f1(self):
-        logger.info('f1 execute')
-
-    @PipelineMixin.register_execute_order(
-        _epoch_tag, order=3, interval='dummy.dummy_value', execute_stage='before'
-    )
-    def f2(self):
-        logger.info('f2 execute')
-
-    @PipelineMixin.register_execute_order(
-        _epoch_tag, order=2, interval=2, execute_stage='before'
-    )
-    def f3(self):
-        logger.info('f3 execute')
-
-    @PipelineMixin.register_execute_order(
-        _epoch_tag, order=1, interval=1, execute_stage='after'
-    )
-    def f4(self):
-        logger.info('f4 execute')
-
-    @PipelineMixin.register_execute_order(
-        _epoch_tag, order=3, interval=1, execute_stage='after'
-    )
-    def f5(self):
-        logger.info('f5 execute')
-
-    @PipelineMixin.register_execute_order(
-        _epoch_tag, order=2, interval=2, execute_stage='after'
-    )
-    def f6(self):
-        logger.info('f6 execute')
 
 
 scheduler = DDIMScheduler()
 
-train_config = TrainingConfig(32, 64, max_epoches=4)
+train_config = TrainingConfig(32, 64, max_epochs=4, checkpointing_epochs=1, validation_epochs=1, saving_epochs=5)
 
 import accelerate
 
@@ -152,18 +110,13 @@ pipe = TestPipeline(
 )
 
 
-logger.info(f'------ test epoch call ---------')
-for i in range(4):
-    logger.info(f'------ epoch {i} ---------')
-    pipe.main_epoch(f'epoch {i} main execute')
-
-logger.info(f'------ test execute cnt ---------')
-epoch_cnt = pipe.execute_counts['epoch']
-logger.info(f'epoch cnt={epoch_cnt}')
-pipe.reset_execute_flag('epoch')
-logger.info('reset epoch cnt')
-epoch_cnt = pipe.execute_counts['epoch']
-logger.info(f'epoch cnt={epoch_cnt}')
+# logger.info(f'------ test execute cnt ---------')
+# epoch_cnt = pipe.execute_counts['epoch']
+# logger.info(f'epoch cnt={epoch_cnt}')
+# pipe.reset_execute_flag('epoch')
+# logger.info('reset epoch cnt')
+# epoch_cnt = pipe.execute_counts['epoch']
+# logger.info(f'epoch cnt={epoch_cnt}')
 
 
 logger.info(f'------ test device and dtype ---------')

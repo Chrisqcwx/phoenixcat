@@ -84,19 +84,19 @@ class AccelerateMixin:
     _use_ddp: bool = False
     _accelerator: "Accelerator" = None
 
-    def register_accelerator(self, accelerator_config: Dict = None) -> None:
-        if accelerate is None or accelerator_config is None:
-            if accelerator_config is not None:
-                logger.warn(
+    def register_accelerator(self, accelerator_or_config: Dict | "Accelerator" = None) -> None:
+        if accelerate is None or accelerator_or_config is None:
+            if accelerator_or_config is not None:
+                logger.warning(
                     "accelerate is not installed, so the accelerator_config will be ignored."
                 )
             self._accelerator = None
             self._use_ddp = False
         else:
-            if not isinstance(accelerator_config, Accelerator):
-                self._accelerator = Accelerator(**accelerator_config)
+            if not isinstance(accelerator_or_config, Accelerator):
+                self._accelerator = Accelerator(**accelerator_or_config)
             else:
-                self._accelerator = accelerator_config
+                self._accelerator = accelerator_or_config
             self._use_ddp = True
 
     @property
