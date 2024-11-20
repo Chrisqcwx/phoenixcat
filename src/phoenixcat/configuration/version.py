@@ -1,3 +1,4 @@
+import logging
 import datetime
 import sys
 import platform
@@ -8,6 +9,7 @@ from typing import Dict
 
 from .dataclass_utils import config_dataclass_wrapper
 
+logger = logging.getLogger(__name__)
 
 def get_current_commit_hash():
     try:
@@ -25,8 +27,11 @@ def get_version_pip():
     lines = result.stdout.split('\n')
     for line in lines[2:]:
         if line:
-            package_name, version = line.split()
-            packages_dict[package_name] = version
+            try:
+                package_name, version, *_ = line.split()
+                packages_dict[package_name] = version
+            except:
+                logger.warning(f"Failed to parse package version: {line}")
     return packages_dict
 
 

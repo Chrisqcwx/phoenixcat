@@ -98,21 +98,19 @@ class OutputFilesManager:
     wandb_dir: str | os.PathLike = "wandb"
 
 
-class PipelineMixin(ConfigMixin, AccelerateMixin, ExecuteOrderMixin):
+class PipelineMixin(ConfigMixin, AccelerateMixin):
 
     config_name = 'pipeline_config.json'
     # record_folder: str = 'record'
     ignore_for_pipeline = set()
     output_files_manager: OutputFilesManager = OutputFilesManager()
 
-    def __init__(self) -> None:
+    def __init__(self, accelerator_or_config = None) -> None:
         super().__init__()
         self._pipeline_record = AutoSaver()
-        # self.register_modules(pipeline_record=PipelineRecord())
 
         self.register_version()
-        self.register_save_values(execute_counts=self.execute_counts)
-        self.accelerator
+        self.register_accelerator(accelerator_or_config)
 
     def register_version(self):
         self.register_save_values(_version=VersionInfo.create(clear_package=True))
@@ -158,15 +156,6 @@ class PipelineMixin(ConfigMixin, AccelerateMixin, ExecuteOrderMixin):
 
         return self
 
-    # def __setattr__(self, name: str, value):
-
-    #     super().__setattr__(name, value)
-    # if name.startswith('_'):
-    #     super().__setattr__(name, value)
-    #     return
-
-    # self.register_save_values(**{name: value})
-
     def register_save_values(self, **kwargs):
 
         for name, value in kwargs.items():
@@ -175,14 +164,11 @@ class PipelineMixin(ConfigMixin, AccelerateMixin, ExecuteOrderMixin):
                 update_config_dict = self._pipeline_record.set(name, value)
                 self.register_to_config(**update_config_dict)
 
-            if not hasattr(self, name):
-                ConfigMixin.__setattr__(self, name, value)
+            super().__setattr__(name, value)
 
     def to(self, *args, **kwargs):
         dtype = kwargs.pop("dtype", None)
         device = kwargs.pop("device", None)
-        # silence_dtype_warnings = kwargs.pop("silence_dtype_warnings", False)
-
         dtype_arg = None
         device_arg = None
         if len(args) == 1:

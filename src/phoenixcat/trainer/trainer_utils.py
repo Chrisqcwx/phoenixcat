@@ -50,15 +50,15 @@ def get_trainer_builder(name: str):
 class TrainingConfig:
     batch_size: int
     test_batch_size: int = None
-    max_epoches: int = None
+    max_epochs: int = None
     max_steps: int = None
-    checkpointing_epoches: int = None
+    checkpointing_epochs: int = None
     checkpointing_steps: int = None
-    validation_epoches: int = None
+    validation_epochs: int = None
     validation_steps: int = None
-    saving_epoches: int = None
+    saving_epochs: int = None
     saving_steps: int = None
-    watching_epoches: int = None
+    watching_epochs: int = None
     watching_steps: int = None
 
     def __post_init__(self) -> None:
@@ -67,57 +67,57 @@ class TrainingConfig:
                 f"`test_batch_size` is None, auto set to `batch_size` ({self.batch_size})."
             )
             self.test_batch_size = self.batch_size
-        if (self.max_epoches is None) and (self.max_steps is None):
+        if (self.max_epochs is None) and (self.max_steps is None):
             logger.warning(
                 f"Both `max_epochs` and `max_steps` are None. "
                 f"`max_epochs` is automatically set to 10000."
             )
-            self.max_epoches = 10000
-        elif (self.max_epoches is not None) and (self.max_steps is not None):
+            self.max_epochs = 10000
+        elif (self.max_epochs is not None) and (self.max_steps is not None):
             logger.warning(
                 f"Both `max_epochs` and `max_steps` are given. "
                 f"Training will end when either limit is reached."
             )
-        if (self.checkpointing_epoches is None) and (self.checkpointing_steps is None):
+        if (self.checkpointing_epochs is None) and (self.checkpointing_steps is None):
             logger.warning(
                 f"Both `checkpointing_epochs` and `checkpointing_steps` are None. "
                 f"No checkpoints will be saved during the training."
             )
-        elif (self.checkpointing_epoches is not None) and (
+        elif (self.checkpointing_epochs is not None) and (
             self.checkpointing_steps is not None
         ):
             logger.warning(
                 f"Both `checkpointing_epochs` and `checkpointing_steps` are given. "
                 f"All checkpoints meeting the criteria will be saved."
             )
-        if (self.validation_epoches is None) and (self.validation_steps is None):
+        if (self.validation_epochs is None) and (self.validation_steps is None):
             logger.warning(
                 f"Both `validation_epochs` and `validation_steps` are None. "
                 f"No validation will be performed during the training."
             )
-        elif (self.validation_epoches is not None) and (
+        elif (self.validation_epochs is not None) and (
             self.validation_steps is not None
         ):
             logger.warning(
                 f"Both `validation_epochs` and `validation_steps` are given. "
                 f"All validation meeting the criteria will be performed."
             )
-        if (self.saving_epoches is None) and (self.saving_steps is None):
+        if (self.saving_epochs is None) and (self.saving_steps is None):
             logger.warning(
                 f"Both `saving_epochs` and `saving_steps` are None. "
                 f"No states will be saved during the training."
             )
-        elif (self.saving_epoches is not None) and (self.saving_steps) is not None:
+        elif (self.saving_epochs is not None) and (self.saving_steps) is not None:
             logger.warning(
                 f"Both `saving_epochs` and `saving_steps` are given. "
                 f"All states meeting the criteria will be saved."
             )
-        if (self.watching_epoches is None) and (self.watching_steps is None):
+        if (self.watching_epochs is None) and (self.watching_steps is None):
             logger.warning(
                 f"Both `saving_epochs` and `saving_steps` are None. "
                 f"No variables will be saved during the training."
             )
-        elif (self.watching_epoches is not None) and (self.watching_steps is not None):
+        elif (self.watching_epochs is not None) and (self.watching_steps is not None):
             logger.warning(
                 f"Both `saving_epochs` and `saving_steps` are given. "
                 f"all variables meeting the criteria will be saved."
@@ -256,7 +256,7 @@ class TrainerMixin(abc.ABC, ConfigMixin):
         set_to_max_epoch = lr_scheduler_config.pop("set_to_max_epoch", None)
         set_to_max_iter = lr_scheduler_config.pop("set_to_max_iter", None)
         if set_to_max_epoch is not None:
-            lr_scheduler_config[set_to_max_epoch] = self.training_config.max_epoches
+            lr_scheduler_config[set_to_max_epoch] = self.training_config.max_epochs
         if set_to_max_iter is not None:
             lr_scheduler_config[set_to_max_iter] = self.training_config.max_steps
         lr_scheduler_cls = get_obj_from_str(lr_scheduler_name)
@@ -274,8 +274,8 @@ class TrainerMixin(abc.ABC, ConfigMixin):
             self.accelerator.wait_for_everyone()
 
     def no_ending(self):
-        if self.training_config.max_epoches is not None:
-            if self.flag.epoch < self.training_config.max_epoches:
+        if self.training_config.max_epochs is not None:
+            if self.flag.epoch < self.training_config.max_epochs:
                 return True
         if self.training_config.max_steps is not None:
             if self.flag.step < self.training_config.max_steps:
@@ -423,20 +423,20 @@ def register_to_run_one_epoch(only_training: bool = False):
             if only_training:
                 return result
 
-            if self.training_config.checkpointing_epoches is not None:
-                if self.flag.epoch % self.training_config.checkpointing_epoches == 0:
+            if self.training_config.checkpointing_epochs is not None:
+                if self.flag.epoch % self.training_config.checkpointing_epochs == 0:
                     self._save_checkpoint()
 
-            if self.training_config.saving_epoches is not None:
-                if self.flag.epoch % self.training_config.saving_epoches == 0:
+            if self.training_config.saving_epochs is not None:
+                if self.flag.epoch % self.training_config.saving_epochs == 0:
                     self._save_training_status()
 
-            if self.training_config.validation_epoches is not None:
-                if self.flag.epoch % self.training_config.validation_epoches == 0:
+            if self.training_config.validation_epochs is not None:
+                if self.flag.epoch % self.training_config.validation_epochs == 0:
                     self._validation()
 
-            if self.training_config.watching_epoches is not None:
-                if self.flag.epoch % self.training_config.watching_epoches == 0:
+            if self.training_config.watching_epochs is not None:
+                if self.flag.epoch % self.training_config.watching_epochs == 0:
                     self._watching()
 
             return result
