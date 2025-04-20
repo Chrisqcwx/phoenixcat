@@ -28,12 +28,12 @@ This project includes code from the [diffusers](https://github.com/huggingface/d
 ## Citation
 
 ```bibtex
-@misc{yu2024phoenixcat,
-  author = {Hongyao Yu and Sijin Yu},
-  title = {Phoenixcat: an enhanced infrastructure library for PyTorch.},
-  year = {2024},
-  publisher = {GitHub},
-  journal = {GitHub repository},
-  howpublished = {\url{https://github.com/Chrisqcwx/phoenixcat}}
+@software{torchvision2016,
+    title        = {Phoenixcat: an enhanced infrastructure library for PyTorch.},
+    author       = {Yu, Hongyao and Yu, Sijin},
+    year         = 2024,
+    journal      = {GitHub repository},
+    publisher    = {GitHub},
+    howpublished = {\url{https://github.com/Chrisqcwx/phoenixcat}}
 }
 ```
