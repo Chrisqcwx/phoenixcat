@@ -83,8 +83,8 @@ def get_model_builder(name: str):
 # adapt from https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/modeling_utils.py
 class ModelMixin(HF_ModelMixin, ConfigMixin):
 
-    WEIGHTS_NAME = None
-    SAFETENSORS_WEIGHTS_NAME = None
+    WEIGHTS_NAME = "pytorch_model.bin"
+    SAFETENSORS_WEIGHTS_NAME = "pytorch_model.safetensors"
 
     def __init__(self):
         super().__init__()
