@@ -9,6 +9,7 @@ from enum import Enum
 class CacheManager:
 
     cache_info_filename = 'cache.json'
+    files_dirname = 'files'
 
     def __init__(self, root_dir: str):
         self.root_dir = Path(root_dir)
@@ -33,7 +34,7 @@ class CacheManager:
         if name in self.cache_info:
             return self.cache_info[name]
         else:
-            cache_dir = self.root_dir / 'files' / f'{cnt}'
+            cache_dir = self.root_dir / self.files_dirname / f'{cnt}'
             # cache_dir.mkdir(exist_ok=True)
             os.makedirs(cache_dir, exist_ok=True)
             self.cache_info[name] = cache_dir

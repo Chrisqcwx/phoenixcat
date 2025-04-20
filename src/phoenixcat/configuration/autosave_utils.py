@@ -123,7 +123,7 @@ class AutoSaver:
         if hasattr(value, 'from_pretrained') and hasattr(value, 'save_pretrained'):
             self._auto_save_modules[key] = value
             return {self._auto_save_name: list(self._auto_save_modules.keys())}
-        elif is_json_serializable(value):
+        elif key in self._constant or is_json_serializable(value):
             self._constant[key] = value
             return {key: value}
         else:
