@@ -12,7 +12,8 @@ class CacheManager:
 
     def __init__(self, root_dir: str):
         self.root_dir = Path(root_dir)
-        self.root_dir.mkdir(exist_ok=True)
+        # self.root_dir.mkdir(exist_ok=True)
+        os.makedirs(self.root_dir, exist_ok=True)
         self.cache_info_file = self.root_dir / self.cache_info_filename
 
         self._cache_info = None
@@ -33,7 +34,8 @@ class CacheManager:
             return self.cache_info[name]
         else:
             cache_dir = self.root_dir / 'files' / f'{cnt}'
-            cache_dir.mkdir(exist_ok=True)
+            # cache_dir.mkdir(exist_ok=True)
+            os.makedirs(cache_dir, exist_ok=True)
             self.cache_info[name] = cache_dir
             self.dump_cache_info()
             return cache_dir
@@ -50,7 +52,8 @@ class FolderManager:
         self.read_only = read_only
 
         if not self.read_only:
-            self.root.mkdir(exist_ok=True)
+            # self.root.mkdir(exist_ok=True)
+            os.makedirs(self.root, exist_ok=True)
 
         self.ptr = self.root.resolve()
 
@@ -71,11 +74,12 @@ class FolderManager:
         ptr = self.get_target_path(path)
         return os.listdir(str(ptr))
 
-    def mkdir(self, path: str = None):
+    def makedirs(self, path: str = None):
         if self.read_only:
             raise PermissionError('Read only mode')
         ptr = self.get_target_path(path)
-        ptr.mkdir(exist_ok=True)
+        # ptr.mkdir(exist_ok=True)
+        os.makedirs(ptr, exist_ok=True)
         return ptr
 
     def rm(self, path: str = None):
@@ -97,7 +101,8 @@ class FolderManager:
         if ptr.is_dir():
             raise IsADirectoryError(f'{ptr} is a directory')
 
-        ptr.parent.mkdir(exist_ok=True)
+        # ptr.parent.mkdir(exist_ok=True)
+        os.makedirs(ptr.parent, exist_ok=True)
 
         if open_kwargs is None:
             open_kwargs = {}
@@ -166,7 +171,8 @@ class DualFolderManager:
     def copy(self, path: str = None, root=False):
         src_file = self.read_manager.get_target_path(path, root=root)
         dst_file = self.write_manager.get_target_path(path, root=root)
-        dst_file.parent.mkdir(exist_ok=True)
+        # dst_file.parent.mkdir(exist_ok=True)
+        os.makedirs(dst_file.parent, exist_ok=True)
         if src_file.is_dir():
             shutil.copytree(src_file, dst_file)
         else:
