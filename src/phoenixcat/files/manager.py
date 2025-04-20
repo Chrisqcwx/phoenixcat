@@ -69,7 +69,7 @@ class FolderManager:
 
     def ls(self, path: str = None):
         ptr = self.get_target_path(path)
-        return ptr.iterdir()
+        return os.listdir(str(ptr))
 
     def mkdir(self, path: str = None):
         if self.read_only:
@@ -139,6 +139,15 @@ class DualFolderManager:
         self.read_manager.cd(path, root=root)
         self.write_manager.cd(path, root=root)
 
+    def ls(self, path: str = None):
+        return self.read_manager.ls(path)
+
+    def is_file(self, path: str = None):
+        return self.read_manager.is_file(path)
+
+    def is_dir(self, path: str = None):
+        return self.read_manager.is_dir(path)
+
     def open(
         self,
         path: str = None,
@@ -167,3 +176,7 @@ class DualFolderManager:
 
     def pwd(self, related=False):
         return self.read_manager.pwd(related=related)
+
+    def parent(self):
+        self.read_manager.parent()
+        self.write_manager.parent()
