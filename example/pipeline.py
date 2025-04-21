@@ -1,5 +1,6 @@
 import os
 import sys
+
 sys.path.append("../src")
 import logging
 
@@ -18,7 +19,7 @@ from phoenixcat.trainer.trainer_utils import (
     TrainingConfig,
     TrainingFlag,
 )
-from phoenixcat.configuration import PipelineMixin, register_to_pipeline_init
+from phoenixcat.auto import PipelineMixin, register_to_pipeline_init
 
 save_dir = './test_pipeline'
 
@@ -77,20 +78,22 @@ class TestPipeline(PipelineMixin):
         auto_regist_save_load,
     ):
 
-        super().__init__(auto_regist_save_load)
+        super().__init__()
         self.manager = manager
 
         self.register_save_values(init_constant=777)
         self.register_save_values(init_module=DDPMScheduler(num_train_timesteps=7))
+        self.register_save_values(auto_regist_save_load=auto_regist_save_load)
         self.flag = TrainingFlag()
 
         self.dummy = DummyClass()
 
 
-
 scheduler = DDIMScheduler()
 
-train_config = TrainingConfig(32, 64, max_epochs=4, checkpointing_epochs=1, validation_epochs=1, saving_epochs=5)
+train_config = TrainingConfig(
+    32, 64, max_epochs=4, checkpointing_epochs=1, validation_epochs=1, saving_epochs=5
+)
 
 import accelerate
 
@@ -137,7 +140,7 @@ logger.info(f'model device={pipe.model.device}, dtype={pipe.model.dtype}')
 logger.info(f'------ test save and load ---------')
 
 pipe.save_pretrained(save_dir)
-pipe.save_config(os.path.join(save_dir, '_test_save_config'))
+# pipe.save_config(os.path.join(save_dir, '_test_save_config'))
 pipe_new = TestPipeline.from_pretrained(save_dir)
 
 logger.info('save pipeline')

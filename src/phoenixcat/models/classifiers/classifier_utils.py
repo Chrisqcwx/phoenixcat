@@ -23,7 +23,7 @@ from diffusers.utils.outputs import BaseOutput
 
 from ..modeling_utils import ModelMixin, get_model_builder
 from ..output import parallel_enable_dataclass
-from ...configuration import extract_init_dict
+from ...auto import extract_init_dict
 
 
 class BaseImageModel(ModelMixin):

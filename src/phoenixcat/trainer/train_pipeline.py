@@ -27,7 +27,7 @@ from diffusers.utils import is_accelerate_available
 if is_accelerate_available():
     from accelerate import Accelerator
 
-from ..configuration import PipelineMixin, config_dataclass_wrapper, only_main_process
+from ..auto import PipelineMixin, config_dataclass_wrapper, only_main_process
 from ..random import seed_every_thing
 from .optimization import OptimizationManager, SingleOptimizationManager
 

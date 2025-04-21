@@ -4,7 +4,7 @@ import logging
 from typing import Optional
 
 from .path import get_safe_save_path
-from ..format import format_as_yaml, format_as_json
+from ..format import format_as_yaml
 
 logger = logging.getLogger(__name__)
 

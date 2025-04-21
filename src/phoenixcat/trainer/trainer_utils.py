@@ -22,7 +22,7 @@ from ..conversion import get_obj_from_str
 from ..logger.logging import init_logger
 from ..random._seeds import seed_every_thing
 from ..decorators import Register
-from ..configuration import (
+from ..auto import (
     # ConfigMixin,
     auto_cls_from_pretrained,
     config_dataclass_wrapper,

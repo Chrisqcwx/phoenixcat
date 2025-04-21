@@ -1,9 +1,5 @@
-import os
 import json
 import logging
-from typing import Optional
-
-from ..format import format_as_yaml, format_as_json
 
 logger = logging.getLogger(__name__)
 
