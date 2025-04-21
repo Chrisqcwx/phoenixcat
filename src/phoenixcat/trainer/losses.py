@@ -19,7 +19,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from ..configuration import auto_register_save_load
+from ..auto import auto_register_save_load
 
 
 def max_margin_loss(out, iden):

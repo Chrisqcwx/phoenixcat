@@ -1,4 +1,4 @@
-# Copyright 2024 Hongyao Yu.
+# Copyright 2025 Hongyao Yu.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -101,13 +101,13 @@ def is_json_serializable(obj):
     try:
         json.dumps(obj)
         return True
-    except TypeError:
+    except (TypeError, OverflowError):
         return False
 
 
 class AutoSaver:
 
-    config_name = "config.json"
+    config_name = "auto_saver_config.json"
     _auto_save_name = "_auto_save_modules"
     _pt_save_name = "_pt_save_modules"
 
@@ -163,9 +163,12 @@ class AutoSaver:
             if name.startswith('_'):
                 continue
             builder = get_obj_from_str(cls_name)
+            # try:
+            # print(builder, name)
             module = builder.from_pretrained(
                 os.path.join(pretrained_model_name_or_path, name)
             )
+
             _auto_save_module[name] = module
 
         config = {k: v for k, v in config.items() if not k.startswith("_")}

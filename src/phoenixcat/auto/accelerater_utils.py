@@ -84,7 +84,9 @@ class AccelerateMixin:
     _use_ddp: bool = False
     _accelerator: "Accelerator" = None
 
-    def register_accelerator(self, accelerator_or_config: Dict | "Accelerator" = None) -> None:
+    def register_accelerator(
+        self, accelerator_or_config: Dict | "Accelerator" = None
+    ) -> None:
         if accelerate is None or accelerator_or_config is None:
             if accelerator_or_config is not None:
                 logger.warning(

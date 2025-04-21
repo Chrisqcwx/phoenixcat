@@ -1,7 +1,8 @@
 import os
 import logging
 
-from .configuration.autosave_utils import auto_register_save_load
+# from .configuration.autosave_utils import auto_register_save_load
+from .auto import auto_register_save_load
 from .welcome import add_welcome_msg, welcome_print
 from .constant import USER_NAME
 from .environ import _environ_init

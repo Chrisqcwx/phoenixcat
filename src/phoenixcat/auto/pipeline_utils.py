@@ -1,4 +1,4 @@
-# Copyright 2024 Hongyao Yu.
+# Copyright 2025 Hongyao Yu.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,16 +33,17 @@ if is_accelerate_available():
 else:
     accelerate = None
 
-from .configuration_utils import ConfigMixin
+from .config_utils import ConfigMixin
 from .autosave_utils import AutoSaver, split_init_other_parameters
 from .dataclass_utils import config_dataclass_wrapper
 from .version import VersionInfo
-from .accelerater_utils import (
-    only_local_main_process,
-    only_main_process,
-    AccelerateMixin,
-)
-from .order_utils import ExecuteOrderMixin
+
+# from .accelerater_utils import (
+#     only_local_main_process,
+#     only_main_process,
+#     AccelerateMixin,
+# )
+# from .order_utils import ExecuteOrderMixin
 
 logger = logging.getLogger(__name__)
 
@@ -98,24 +99,23 @@ class OutputFilesManager:
     wandb_dir: str | os.PathLike = "wandb"
 
 
-class PipelineMixin(ConfigMixin, AccelerateMixin):
+class PipelineMixin:
 
-    config_name = 'pipeline_config.json'
+    # config_name = 'pipeline_config.json'
     # record_folder: str = 'record'
     ignore_for_pipeline = set()
     output_files_manager: OutputFilesManager = OutputFilesManager()
 
-    def __init__(self, accelerator_or_config = None) -> None:
+    def __init__(self) -> None:
         super().__init__()
         self._pipeline_record = AutoSaver()
 
         self.register_version()
-        self.register_accelerator(accelerator_or_config)
+        # self.register_accelerator(accelerator_or_config)
 
     def register_version(self):
         self.register_save_values(_version=VersionInfo.create(clear_package=True))
 
-    @only_main_process
     def save_pretrained(
         self,
         save_directory: str | os.PathLike,
@@ -124,12 +124,6 @@ class PipelineMixin(ConfigMixin, AccelerateMixin):
         # push_to_hub: bool = False,
         # **kwargs,
     ):
-        # TODO: add these params
-
-        # super().save_pretrained(
-        #     save_directory, safe_serialization, variant, push_to_hub, **kwargs
-        # )
-        # record_path = os.path.join(save_directory, self.record_folder)
         record_path = save_directory
         self.register_version()
         self._pipeline_record.save_pretrained(record_path)
@@ -138,10 +132,10 @@ class PipelineMixin(ConfigMixin, AccelerateMixin):
     def from_pretrained(cls, pretrained_model_name_or_path: str, **kwargs):
         # record_path = os.path.join(pretrained_model_name_or_path, cls.record_folder)
         record_path = pretrained_model_name_or_path
-        try:
-            records = AutoSaver.load(record_path)
-        except Exception as e:
-            records = {}
+        # try:
+        records = AutoSaver.load(record_path)
+        # except Exception as e:
+        #     records = {}
 
         kwargs = {**records, **kwargs}
 
@@ -150,6 +144,10 @@ class PipelineMixin(ConfigMixin, AccelerateMixin):
         # other_kwargs = {k: v for k, v in kwargs.items() if k not in init_parameters}
         init_kwargs, other_kwargs = split_init_other_parameters(cls, kwargs)
         # self = super().from_pretrained(pretrained_model_name_or_path, **init_kwargs)
+        # print(kwargs.keys())
+        # print(init_kwargs.keys())
+        # print(other_kwargs.keys())
+        # exit()
         self = cls(**init_kwargs)
 
         self.register_save_values(**other_kwargs)
@@ -162,7 +160,7 @@ class PipelineMixin(ConfigMixin, AccelerateMixin):
             if not name in self.ignore_for_pipeline:
 
                 update_config_dict = self._pipeline_record.set(name, value)
-                self.register_to_config(**update_config_dict)
+                # self.register_to_config(**update_config_dict)
 
             super().__setattr__(name, value)
 
@@ -253,6 +251,6 @@ class PipelineMixin(ConfigMixin, AccelerateMixin):
 
     def tqdm(self, iterable, **kwargs):
         disable = kwargs.pop("disable", False)
-        if self.accelerator is not None:
-            disable = not self.accelerator.is_local_main_process or disable
+        # if self.accelerator is not None:
+        #     disable = not self.accelerator.is_local_main_process or disable
         return tqdm(iterable=iterable, disable=disable, **kwargs)

@@ -23,7 +23,7 @@ from diffusers.optimization import get_scheduler as diffusers_get_scheduler
 from ..conversion import get_obj_from_str
 from ..decorators import Register
 from ..files import safe_save_as_json, load_json, get_safe_save_path
-from ..configuration import config_dataclass_wrapper
+from ..auto import config_dataclass_wrapper
 
 
 logger = logging.getLogger(__name__)
