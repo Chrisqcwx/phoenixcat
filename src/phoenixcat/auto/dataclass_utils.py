@@ -34,20 +34,6 @@ def dict2dataclass(_data, _class):
             else:
                 _success = False
 
-                # searched_types = (
-                #     get_args(fieldtype)
-                #     if isinstance(fieldtype, (UnionType))
-                #     # or isinstance(fieldtype, _UnionGenericAlias)
-                #     else [fieldtype]
-                # )
-                # print(
-                #     fieldtype,
-                #     type(fieldtype),
-                #     searched_types,
-                #     get_args(fieldtype),
-                #     isinstance(fieldtype, (UnionType)) or fieldtype == Optional,
-                # )
-
                 searched_types = chain([fieldtype], get_args(fieldtype))
 
                 for elem_type in searched_types:
@@ -100,6 +86,8 @@ def config_dataclass_wrapper(config_name='config.json'):
             for k, v in self.__dict__.items():
                 if is_dataclass(v):
                     config[k] = v.get_config()
+                elif isinstance(v, list):
+                    config[k] = [i.get_config() if is_dataclass(i) else i for i in v]
                 else:
                     config[k] = v
             return config

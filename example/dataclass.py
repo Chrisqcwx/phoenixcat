@@ -29,11 +29,14 @@ class PersonConfig:
     name: str
     age: int
     school: SchoolConfig | None
+    schools: list[SchoolConfig]
 
 
 teacher_config = TeacherConfig(name="Tom", classname="Math")
 school_config = SchoolConfig(name="ABC", teacher=teacher_config)
-config = PersonConfig(name="Tom", age=18, school=school_config)
+config = PersonConfig(
+    name="Tom", age=18, school=school_config, schools=[school_config, school_config]
+)
 
 print(config)
 
