@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
+from contextlib import contextmanager
 
 
 class CacheManager:
@@ -92,7 +93,7 @@ class FolderManager:
     def open(self, path: str = None, mode: str = 'r', open_kwargs=None, root=False):
         is_read = mode.startswith('r')
 
-        if self.read_only and is_read:
+        if self.read_only and not is_read:
             raise PermissionError('Read only mode')
 
         ptr = self.get_target_path(path, root=root)
@@ -154,20 +155,32 @@ class DualFolderManager:
     def is_dir(self, path: str = None):
         return self.read_manager.is_dir(path)
 
+    @contextmanager
     def open(
         self,
         path: str = None,
-        open_kwargs=None,
         read_mode: str = 'r',
         write_mode: str = 'w',
+        open_kwargs=None,
+        root: bool=False,
+        write_extension: str = None,
     ):
         read_file = self.read_manager.open(
-            path, mode=read_mode, open_kwargs=open_kwargs
+            path, mode=read_mode, open_kwargs=open_kwargs, root=root
         )
+
+        if write_extension is not None:
+            if not write_extension.startswith('.'):
+                write_extension = '.' + write_extension
+            path = str(path).rsplit('.', 1)[0] + write_extension
         write_file = self.write_manager.open(
-            path, mode=write_mode, open_kwargs=open_kwargs
+            path, mode=write_mode, open_kwargs=open_kwargs, root=root
         )
-        return read_file, write_file
+        try:
+            yield read_file, write_file
+        finally:
+            read_file.close()
+            write_file.close()
 
     def copy(self, path: str = None, root=False):
         src_file = self.read_manager.get_target_path(path, root=root)
