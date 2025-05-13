@@ -6,7 +6,7 @@ from .format import (
     format_time,
     format_time_invterval,
 )
-from .latex_utils import (
+from .latex_format import (
     DataPoint,
     ListDataPoint,
     TableDataPoint,
