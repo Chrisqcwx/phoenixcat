@@ -132,7 +132,6 @@ class ListDataPoint:
             else [DataPoint(m) for m in mean]
         )
         for d in self.points:
-            # if decimal is not None:
             d.set_decimal(decimal)
 
         self.set_highlight(highlight_type)
