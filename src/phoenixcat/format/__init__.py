@@ -6,11 +6,10 @@ from .format import (
     format_time,
     format_time_invterval,
 )
-from .latex_format import (
+from .latex import (
     DataPoint,
     ListDataPoint,
     TableDataPoint,
-    create_table_from_list,
-    merge_tables,
-    table_to_string,
+    register_highlight_format,
+    list_all_highlight_format,
 )
