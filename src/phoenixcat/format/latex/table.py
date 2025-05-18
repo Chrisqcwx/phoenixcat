@@ -4,6 +4,8 @@ import logging
 from typing import AnyStr, Dict, Callable, Literal
 from dataclasses import dataclass
 
+import pandas as pd
+
 logger = logging.getLogger(__name__)
 
 _highlight_format_mapping = {
@@ -66,9 +68,9 @@ class DataPoint:
         self.set_decimal(self.decimal)
         self.set_highlight_format(self.highlight_format)
 
-    def _preprocess_highlight_format(self, highlight_format):
+    def _preprocess_highlight_format(self, highlight_format: str):
         if highlight_format is None:
-            return "{{{}}}"
+            return _highlight_format_mapping["none"]
         highlight_format_lower = highlight_format.lower()
         if highlight_format_lower in _highlight_format_mapping:
             highlight_format = _highlight_format_mapping[highlight_format_lower]
@@ -191,6 +193,10 @@ class TableDataPoint:
             for list_point in self.list_points
         ):
             raise ValueError("All lists in list_points must have the same length")
+
+    @property
+    def str_matrix(self):
+        return [list(map(str, col)) for col in self.list_points]
 
     @property
     def transpose_str_matrix(self):
