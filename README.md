@@ -28,7 +28,7 @@ This project includes code from the [diffusers](https://github.com/huggingface/d
 ## Citation
 
 ```bibtex
-@software{torchvision2016,
+@software{yu2024phoenxcat,
     title        = {Phoenixcat: an enhanced infrastructure library for PyTorch.},
     author       = {Yu, Hongyao and Yu, Sijin},
     year         = 2024,
