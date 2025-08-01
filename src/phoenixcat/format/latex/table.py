@@ -1,7 +1,21 @@
+# Copyright 2025 Hongyao Yu.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import re
 import heapq
 import logging
-from typing import AnyStr, Dict, Callable, Literal
+from typing import AnyStr, Dict, Callable, Literal, TypeVar, Union, Generic
 from dataclasses import dataclass
 
 import pandas as pd
@@ -133,10 +147,43 @@ class ListDataPoint:
             if std is not None
             else [DataPoint(m) for m in mean]
         )
+        self.decimal = decimal
+        self.highlight_type = highlight_type
         for d in self.points:
             d.set_decimal(decimal)
 
         self.set_highlight(highlight_type)
+
+    @classmethod
+    def concat(cls, list_data_points: list["ListDataPoint"]):
+        all_means = [
+            p.mean
+            for list_data_point in list_data_points
+            for p in list_data_point.points
+        ]
+        all_stds = [
+            p.std
+            for list_data_point in list_data_points
+            for p in list_data_point.points
+        ]
+        # check decimal and highlight_type is the same
+        if not all(
+            list_data_point.decimal == list_data_points[0].decimal
+            for list_data_point in list_data_points
+        ):
+            raise ValueError("Decimal must be the same for all data points")
+
+        if not all(
+            list_data_point.highlight_type == list_data_points[0].highlight_type
+            for list_data_point in list_data_points
+        ):
+            raise ValueError("Highlight type must be the same for all data points")
+        return cls(
+            all_means,
+            all_stds,
+            decimal=list_data_points[0].decimal,
+            highlight_type=list_data_points[0].highlight_type,
+        )
 
     def __len__(self):
         return len(self.points)
@@ -182,6 +229,10 @@ class ListDataPoint:
     def get_list_str(self):
         return [str(d) for d in self.points]
 
+    @property
+    def fixed(self):
+        return self.get_list_str()
+
 
 class TableDataPoint:
 
@@ -192,7 +243,9 @@ class TableDataPoint:
             len(list_point) == len(self.list_points[0])
             for list_point in self.list_points
         ):
-            raise ValueError("All lists in list_points must have the same length")
+            raise ValueError(
+                f"All lists in list_points must have the same length, but found {[len(list_point) for list_point in self.list_points]}"
+            )
 
     @property
     def str_matrix(self):
@@ -205,7 +258,7 @@ class TableDataPoint:
 
     def __str__(self):
         matrix = self.transpose_str_matrix
-        return " \n".join([" & ".join(row) for row in matrix])
+        return "".join([" & ".join(row) + " \\\\\n" for row in matrix])
 
     def __getitem__(self, indice):
         return self.list_points[indice]
@@ -219,12 +272,185 @@ class TableDataPoint:
     def __len__(self):
         return len(self.list_points)
 
+    @property
+    def num_cols(self):
+        return len(self)
+
+    @property
+    def num_rows(self):
+        return len(self.list_points[0])
+
     @staticmethod
-    def concat(table_data_points: list["TableDataPoint"]):
-        return TableDataPoint(
-            [
-                list_point
+    def concat(
+        table_data_points: list["TableDataPoint"], axis: Literal['col', 'row'] = 'col'
+    ):
+        if axis == "col":
+            return TableDataPoint(
+                [
+                    list_point
+                    for table_data_point in table_data_points
+                    for list_point in table_data_point.list_points
+                ]
+            )
+        elif axis == "row":
+            if not all(
+                len(table_data_point) == len(table_data_points[0])
                 for table_data_point in table_data_points
-                for list_point in table_data_point.list_points
-            ]
-        )
+            ):
+                raise ValueError("All TableDataPoint must have the same length")
+
+            all_cols = []
+            for i in range(len(table_data_points[0])):
+                cols = [table_data_point[i] for table_data_point in table_data_points]
+                if isinstance(cols[0], ListDataPoint):
+                    all_cols.append(ListDataPoint.concat(cols))
+                else:
+                    all_cols.append([item for col in cols for item in col])
+            return TableDataPoint(all_cols)
+        else:
+            raise ValueError("Axis must be 'col' or 'row'")
+
+    @property
+    def fixed(self):
+        lists = []
+        for list_point in self.list_points:
+            if isinstance(list_point, ListDataPoint):
+                lists.append(list_point.fixed)
+            else:
+                lists.append(list_point)
+        return TableDataPoint(lists)
+
+
+@dataclass
+class MultiCellInfo:
+    context: str
+    length: int | None = None
+
+
+# @dataclass
+# class MultiRowInfo(MultiCellInfo):
+#     pass
+
+
+# @dataclass
+# class MultiColInfo(MultiCellInfo):
+#     pass
+
+
+# T = TypeVar("T", bound=Union[MultiRowInfo, MultiColInfo])
+
+
+class ListMultiCellInfo:
+    def __init__(self, infos: list[MultiCellInfo]):
+        all_infos = []
+        for info in infos:
+            if isinstance(info, str):
+                info = MultiCellInfo(info, 1)
+            elif isinstance(info, MultiCellInfo):
+                pass
+            else:
+                info = MultiCellInfo(info[0], info[1])
+            all_infos.append(info)
+
+        self.infos = all_infos
+
+        # print(len(self))
+
+    # def __len__(self):
+    #     return len(self.infos)
+
+    def __getitem__(self, item):
+        return self.infos[item]
+
+    def __iter__(self):
+        return iter(self.infos)
+
+    @property
+    def length(self):
+        # return None
+        current_length = 0
+        for info in self.infos:
+            if info.length is None:
+                return None
+            current_length += info.length
+        return current_length
+
+    def fill_length(self, length):
+        none_indices = []
+        current_length = 0
+        for idx, info in enumerate(self.infos):
+            if info.length is None:
+                none_indices.append(idx)
+            else:
+                current_length += info.length
+        if len(none_indices) == 0:
+            if not current_length == length:
+                raise ValueError(f"Invalid length: {length}, expected {current_length}")
+            return self
+        if len(none_indices) == 1:
+            if current_length > length:
+                raise ValueError(f"Invalid length: {length}, expected {current_length}")
+            self.infos[none_indices[0]].length = length - current_length
+            return
+        # len(none_indices) > 1
+        raise ValueError("None length is larger than 1. Fail to fill length")
+
+
+class ListMultiRowInfo(ListMultiCellInfo):
+
+    def create_table(self):
+        contents = []
+        for info in self.infos:
+            if info.length is None:
+                raise RuntimeError("None length is not allowed")
+            if info.length == 1:
+                contents.append(info.context)
+            else:
+                contents.append(f"\\multirow{{{info.length}}}{{*}}{{{info.context}}}")
+                contents.extend([""] * (info.length - 1))
+        return TableDataPoint([contents])
+
+
+class TableRow:
+
+    def __init__(self, contents: list[ListMultiRowInfo, TableDataPoint]):
+        self.contents = contents
+        self.length = self._check_length()
+
+    def create_table(self):
+        tables = [
+            content.create_table() if isinstance(content, ListMultiRowInfo) else content
+            for content in self.contents
+        ]
+        return TableDataPoint.concat(tables, axis="col")
+
+    def _check_length(self):
+        standard_length = None
+        for content in self.contents:
+            if isinstance(content, ListMultiCellInfo):
+                current_length = content.length
+            elif isinstance(content, TableDataPoint):
+                current_length = content.num_rows
+            else:
+                raise ValueError("Invalid content")
+
+            if (
+                standard_length is not None
+                and current_length is not None
+                and standard_length != current_length
+            ):
+                raise ValueError(
+                    f"Invalid length, current length is {current_length}, reference length is {standard_length}"
+                )
+            standard_length = (
+                standard_length if standard_length is not None else current_length
+            )
+
+        if standard_length is None:
+            raise ValueError("Invalid length")
+
+        for content in self.contents:
+            if isinstance(content, ListMultiCellInfo):
+                content.fill_length(standard_length)
+
+        return standard_length
