@@ -46,6 +46,12 @@ class CacheManager:
         with open(self.cache_info_file, 'w') as f:
             json.dump(self.cache_info, f, indent=2)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.dump_cache_info()
+
 
 class FolderManager:
 
@@ -162,7 +168,7 @@ class DualFolderManager:
         read_mode: str = 'r',
         write_mode: str = 'w',
         open_kwargs=None,
-        root: bool=False,
+        root: bool = False,
         write_extension: str = None,
     ):
         read_file = self.read_manager.open(
