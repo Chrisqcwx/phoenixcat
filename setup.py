@@ -8,7 +8,7 @@ setup(
     name="phoenixcat",
     version="0.4.4",
     author="Hongyao Yu, Sijin Yu",
-    author_email="yuhongyao@stu.hit.edu.cn, eeyusijin@mail.scut.edu.cn",
+    author_email="chrisqcwx@gmail.com, eeyusijin@mail.scut.edu.cn",
     description="An enhanced infrastructure library for PyTorch.",
     long_description=long_description,
     long_description_content_type="text/markdown",
