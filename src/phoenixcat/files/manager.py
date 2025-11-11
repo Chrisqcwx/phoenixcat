@@ -18,7 +18,13 @@ import shutil
 from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
+from typing import Optional, List, Dict, Any, Union, Literal
 from contextlib import contextmanager
+from functools import wraps
+
+from .load import load_json, load_yaml
+from .save import safe_save_as_json, safe_save_as_yaml
+from .walk import walk_dict
 
 
 class CacheManager:
@@ -220,3 +226,81 @@ class DualFolderManager:
     def parent(self):
         self.read_manager.parent()
         self.write_manager.parent()
+
+
+class RecordManager:
+
+    def __init__(
+        self,
+        data: Dict = None,
+        file: str | Path = None,
+        file_format: Literal['json', 'yaml'] = 'json',
+    ):
+        if file:
+            file = str(file)
+        self.file = file
+        self.file_format = file_format
+        self.load_fn = load_json if file_format == 'json' else load_yaml
+        self.save_fn = safe_save_as_json if file_format == 'json' else safe_save_as_yaml
+        if data is None:
+            if file is None:
+                self.data = {}
+            else:
+                self.data = self.load_fn(file)
+        else:
+            self.data = data
+
+    def get_dict_value(self, data: Dict, key: str):
+        keys = key.split(".")
+        for k in keys[:-1]:
+            if k not in data:
+                data[k] = {}
+            data = data[k]
+
+        last_key = keys[-1]
+        if last_key not in data:
+            return False, None
+        return True, data[keys[-1]]
+
+    def set_dict_value(self, data: Dict, key: str, value):
+        keys = key.split(".")
+        for k in keys[:-1]:
+            if k not in data:
+                data[k] = {}
+            data = data[k]
+        data[keys[-1]] = value
+
+    def save(self, file: str | None = None, raise_error: bool = True):
+        if file is None:
+            file = self.file
+        if file is None:
+            if raise_error:
+                raise ValueError('No file specified')
+            return
+
+        self.save_fn(file, self.data)
+
+    def cache_apply(
+        self, key, file: str | None = None, raise_save_error: bool = True, func=None
+    ):
+        wrapper = self.__call__(key, file, raise_save_error)
+        if func is None:
+            return wrapper
+        return wrapper(func)
+
+    def __call__(self, key, file: str | None = None, raise_save_error: bool = True):
+
+        def _inner_func(func):
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                has_cache, value = self.get_dict_value(self.data, key)
+                if has_cache:
+                    return value
+                return_value = func(value, *args, **kwargs)
+                self.set_dict_value(self.data, key, return_value)
+                self.save(file, raise_save_error)
+                return return_value
+
+            return wrapper
+
+        return _inner_func
