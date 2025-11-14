@@ -15,6 +15,7 @@
 import os
 import json
 import shutil
+import inspect
 from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
@@ -22,9 +23,14 @@ from typing import Optional, List, Dict, Any, Union, Literal
 from contextlib import contextmanager
 from functools import wraps
 
-from .load import load_json, load_yaml
-from .save import safe_save_as_json, safe_save_as_yaml
-from .walk import walk_dict
+from .load import load_json, load_yaml, load_torchobj, load_pickle
+from .save import (
+    safe_save_as_json,
+    safe_save_as_yaml,
+    safe_save_torchobj,
+    safe_save_as_pickle,
+)
+from ..auto.autosave_utils import is_json_serializable
 
 
 class CacheManager:
@@ -61,6 +67,9 @@ class CacheManager:
             self.cache_info[name] = cache_dir
             self.dump_cache_info()
             return cache_dir
+
+    def exists(self, name):
+        return name in self.cache_info
 
     def dump_cache_info(self):
         with open(self.cache_info_file, 'w') as f:
@@ -230,31 +239,63 @@ class DualFolderManager:
 
 class RecordManager:
 
+    tag: str = ".cache.phoenixcat"
+    _format2suffix = {"torch": ".pt", "pickle": ".pkl"}
+
     def __init__(
         self,
-        data: Dict = None,
-        file: str | Path = None,
+        file: str | Path,
         file_format: Literal['json', 'yaml'] = 'json',
+        non_serializable_format: Literal["torch", "pickle"] = "pickle",
     ):
-        if file:
-            file = str(file)
+        file = str(file)
         self.file = file
         self.file_format = file_format
+        self.non_serializable_format = non_serializable_format
         self.load_fn = load_json if file_format == 'json' else load_yaml
         self.save_fn = safe_save_as_json if file_format == 'json' else safe_save_as_yaml
-        if data is None:
-            if file is None:
-                self.data = {}
-            else:
-                self.data = self.load_fn(file)
+        self.non_serializable_load_fn = (
+            load_torchobj if non_serializable_format == 'torch' else load_pickle
+        )
+        self.non_serializable_save_fn = (
+            safe_save_torchobj
+            if non_serializable_format == 'torch'
+            else safe_save_as_pickle
+        )
+
+        if not os.path.exists(file):
+            self.cache_dir = self._get_init_cache_dir(file)
+            self.data = {"_cache_dir": self.cache_dir}
         else:
-            self.data = data
+            self.data = self.load_fn(file)
+            self.cache_dir = self.data.get("_cache_dir")
+
+        os.makedirs(self.cache_dir, exist_ok=True)
+        self.cache_info_file = os.path.join(self.cache_dir, f"cache_info.{file_format}")
+        if os.path.exists(self.cache_info_file):
+            self.cache_info = self.load_fn(self.cache_info_file)
+        else:
+            self.cache_info = {}
+
+    def _get_init_cache_dir(self, original_file):
+        basename = os.path.basename(original_file)
+        if '.' in basename:
+            basename = basename.rsplit('.', 1)[0]
+        return os.path.join(
+            os.path.dirname(original_file),
+            self.tag,
+            basename,
+        )
 
     def get_dict_value(self, data: Dict, key: str):
+
+        if key in self.cache_info:
+            return True, self.non_serializable_load_fn(self.cache_info[key])
+
         keys = key.split(".")
         for k in keys[:-1]:
             if k not in data:
-                data[k] = {}
+                return False, None
             data = data[k]
 
         last_key = keys[-1]
@@ -263,42 +304,62 @@ class RecordManager:
         return True, data[keys[-1]]
 
     def set_dict_value(self, data: Dict, key: str, value):
+        json_serializable = is_json_serializable(value)
+        if not json_serializable:
+            folder_values = [self.cache_dir, *key.split(".")]
+            save_name = (
+                folder_values[-1] + self._format2suffix[self.non_serializable_format]
+            )
+            folder_values = folder_values[:-1]
+            folder = os.path.join(*folder_values)
+            os.makedirs(folder, exist_ok=True)
+            save_path = os.path.join(folder, save_name)
+            self.cache_info[key] = save_path
+            self.save_fn(value, save_path)
+
         keys = key.split(".")
         for k in keys[:-1]:
             if k not in data:
                 data[k] = {}
             data = data[k]
-        data[keys[-1]] = value
+        data[keys[-1]] = value if json_serializable else f"@{save_path}"
 
-    def save(self, file: str | None = None, raise_error: bool = True):
-        if file is None:
-            file = self.file
-        if file is None:
-            if raise_error:
-                raise ValueError('No file specified')
-            return
-
+    def save(self):
+        file = self.file
         self.save_fn(file, self.data)
+        self.save_fn(self.cache_info_file, self.cache_info)
 
-    def cache_apply(
-        self, key, file: str | None = None, raise_save_error: bool = True, func=None
-    ):
-        wrapper = self.__call__(key, file, raise_save_error)
+    def cache_apply(self, key, func=None):
+        wrapper = self.__call__(key)
         if func is None:
             return wrapper
         return wrapper(func)
 
-    def __call__(self, key, file: str | None = None, raise_save_error: bool = True):
+    def __call__(self, key):
 
         def _inner_func(func):
             @wraps(func)
             def wrapper(*args, **kwargs):
+
+                init_kwargs = {k: v for k, v in kwargs.items() if not k.startswith("_")}
+
+                signature = inspect.signature(func)
+                parameters = {
+                    name: p.default
+                    for i, (name, p) in enumerate(signature.parameters.items())
+                    if name != "self"
+                }
+                for arg, name in zip(args, parameters.keys()):
+                    parameters[name] = arg
+                for k, v in init_kwargs.items():
+                    parameters[k] = v
+
                 has_cache, value = self.get_dict_value(self.data, key)
                 if has_cache:
                     return value
-                return_value = func(value, *args, **kwargs)
+                return_value = func(*args, **kwargs)
                 self.set_dict_value(self.data, key, return_value)
-                self.save(file, raise_save_error)
+                self.save()
                 return return_value
 
             return wrapper

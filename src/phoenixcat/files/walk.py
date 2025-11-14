@@ -42,13 +42,4 @@ def walk_images(path: str):
     return walk_extension_files(path, suffix=IMG_EXTENSIONS)
 
 
-def walk_dict(data: Dict, key: str, create_if_not_exist: bool = False):
-    keys = key.split(".")
-    for k in keys:
-        if k not in data:
-            if create_if_not_exist:
-                data[k] = {}
-            else:
-                raise KeyError(f"Key {key} not found in data")
-        data = data[k]
-    return data
+

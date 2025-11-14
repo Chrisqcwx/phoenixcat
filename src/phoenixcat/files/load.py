@@ -33,3 +33,13 @@ def load_json(path: str):
         data = json.load(f)
 
     return data
+
+
+def load_pickle(path: str):
+
+    import pickle
+
+    with open(path, 'rb') as f:
+        data = pickle.load(f)
+
+    return data

@@ -45,6 +45,23 @@ def safe_save_torchobj(obj, save_path: str):
     logger.info(f'Save torch object to {save_path}.')
 
 
+def safe_save_as_pickle(obj, save_path: str):
+    """Save the data in pickle format.
+
+    Args:
+        obj (Any): The objective to save.
+        save_dir (str): The directory path.
+        save_name (Optional[str], optional): The file name for the data to save. Defaults to None.
+    """
+
+    save_path = get_safe_save_path(save_path)
+
+    import pickle
+
+    with open(save_path, 'wb') as f:
+        pickle.dump(obj, f)
+
+
 def safe_save_csv(obj, save_path: str):
     """Save the data in csv format.
 
