@@ -243,6 +243,9 @@ class RecordManager:
     _format2suffix = {"torch": ".pt", "pickle": ".pkl"}
     file: str = None
 
+    anchor_name = "_params"
+    result_name = "_results"
+
     def __init__(
         self,
         file: str = None,
@@ -329,7 +332,7 @@ class RecordManager:
             raise ValueError(f"Anchor values are not supported for non-list values.")
 
         for value in result:
-            if value.get("_anchor", None) == anchor_values:
+            if value.get(self.anchor_name, None) == anchor_values:
                 return True, value
 
         return False, None
@@ -362,8 +365,8 @@ class RecordManager:
                 data[final_key] = []
             data[final_key].append(
                 {
-                    "params": anchor_values,
-                    "result": value if json_serializable else f"@{save_path}",
+                    self.anchor_name: anchor_values,
+                    self.result_name: value if json_serializable else f"@{save_path}",
                 }
             )
 
@@ -387,6 +390,8 @@ class RecordManager:
             @wraps(func)
             def wrapper(*args, **kwargs):
 
+                nonlocal anchor
+
                 if anchor is None:
                     anchor_values = None
                 else:
@@ -399,18 +404,20 @@ class RecordManager:
 
                     signature = inspect.signature(func)
                     parameters = {
-                        name: p.default
-                        for i, (name, p) in enumerate(signature.parameters.items())
-                        if name != "self"
+                        name: p.default for (name, p) in (signature.parameters.items())
                     }
                     for arg, name in zip(args, parameters.keys()):
                         parameters[name] = arg
                     for k, v in init_kwargs.items():
                         parameters[k] = v
+                    parameters.pop("self", None)
 
                     anchor_values = {k: parameters.get(k, None) for k in anchor}
 
                     if not is_json_serializable(anchor_values):
+                        print(args)
+                        print(kwargs)
+                        print(anchor_values)
                         raise ValueError("anchor values must be json serializable, ")
 
                 has_cache, value = self.get_dict_value(
