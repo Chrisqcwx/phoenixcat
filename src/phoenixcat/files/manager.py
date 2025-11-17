@@ -241,41 +241,59 @@ class RecordManager:
 
     tag: str = ".cache.phoenixcat"
     _format2suffix = {"torch": ".pt", "pickle": ".pkl"}
+    file: str = None
 
     def __init__(
         self,
-        file: str | Path,
+        file: str = None,
         file_format: Literal['json', 'yaml'] = 'json',
         non_serializable_format: Literal["torch", "pickle"] = "pickle",
     ):
         file = str(file)
-        self.file = file
+        self.file = file or self.file
+
         self.file_format = file_format
         self.non_serializable_format = non_serializable_format
-        self.load_fn = load_json if file_format == 'json' else load_yaml
-        self.save_fn = safe_save_as_json if file_format == 'json' else safe_save_as_yaml
+
+        self._is_init = False
+
+    def _delay_init(self):
+
+        if self.file is None:
+            raise FileNotFoundError(f"File {self.file} not found.")
+
+        self.load_fn = load_json if self.file_format == 'json' else load_yaml
+        self.save_fn = (
+            safe_save_as_json if self.file_format == 'json' else safe_save_as_yaml
+        )
         self.non_serializable_load_fn = (
-            load_torchobj if non_serializable_format == 'torch' else load_pickle
+            load_torchobj if self.non_serializable_format == 'torch' else load_pickle
         )
         self.non_serializable_save_fn = (
             safe_save_torchobj
-            if non_serializable_format == 'torch'
+            if self.non_serializable_format == 'torch'
             else safe_save_as_pickle
         )
 
-        if not os.path.exists(file):
-            self.cache_dir = self._get_init_cache_dir(file)
+        if not os.path.exists(self.file):
+            self.cache_dir = self._get_init_cache_dir(self.file)
             self.data = {"_cache_dir": self.cache_dir}
         else:
-            self.data = self.load_fn(file)
+            self.data = self.load_fn(self.file)
             self.cache_dir = self.data.get("_cache_dir")
 
         os.makedirs(self.cache_dir, exist_ok=True)
-        self.cache_info_file = os.path.join(self.cache_dir, f"cache_info.{file_format}")
+        self.cache_info_file = os.path.join(
+            self.cache_dir, f"cache_info.{self.file_format}"
+        )
         if os.path.exists(self.cache_info_file):
             self.cache_info = self.load_fn(self.cache_info_file)
         else:
             self.cache_info = {}
+
+        self._is_init = True
+
+    # def set
 
     def _get_init_cache_dir(self, original_file):
         basename = os.path.basename(original_file)
@@ -315,7 +333,7 @@ class RecordManager:
             os.makedirs(folder, exist_ok=True)
             save_path = os.path.join(folder, save_name)
             self.cache_info[key] = save_path
-            self.save_fn(value, save_path)
+            self.non_serializable_save_fn(value, save_path)
 
         keys = key.split(".")
         for k in keys[:-1]:
@@ -326,8 +344,8 @@ class RecordManager:
 
     def save(self):
         file = self.file
-        self.save_fn(file, self.data)
-        self.save_fn(self.cache_info_file, self.cache_info)
+        self.save_fn(self.data, file)
+        self.save_fn(self.cache_info, self.cache_info_file)
 
     def cache_apply(self, key, func=None):
         wrapper = self.__call__(key)
@@ -337,22 +355,25 @@ class RecordManager:
 
     def __call__(self, key):
 
+        if not self._is_init:
+            self._delay_init()
+
         def _inner_func(func):
             @wraps(func)
             def wrapper(*args, **kwargs):
 
-                init_kwargs = {k: v for k, v in kwargs.items() if not k.startswith("_")}
+                # init_kwargs = {k: v for k, v in kwargs.items() if not k.startswith("_")}
 
-                signature = inspect.signature(func)
-                parameters = {
-                    name: p.default
-                    for i, (name, p) in enumerate(signature.parameters.items())
-                    if name != "self"
-                }
-                for arg, name in zip(args, parameters.keys()):
-                    parameters[name] = arg
-                for k, v in init_kwargs.items():
-                    parameters[k] = v
+                # signature = inspect.signature(func)
+                # parameters = {
+                #     name: p.default
+                #     for i, (name, p) in enumerate(signature.parameters.items())
+                #     if name != "self"
+                # }
+                # for arg, name in zip(args, parameters.keys()):
+                #     parameters[name] = arg
+                # for k, v in init_kwargs.items():
+                #     parameters[k] = v
 
                 has_cache, value = self.get_dict_value(self.data, key)
                 if has_cache:
@@ -365,3 +386,17 @@ class RecordManager:
             return wrapper
 
         return _inner_func
+
+
+record_manager: RecordManager = RecordManager()
+
+
+def set_record_manager_path(
+    file: str,
+    file_format: Literal['json', 'yaml'] = 'json',
+    non_serializable_format: Literal["torch", "pickle"] = "pickle",
+):
+    global record_manager
+    record_manager.file = file
+    record_manager.file_format = file_format
+    record_manager.non_serializable_format = non_serializable_format

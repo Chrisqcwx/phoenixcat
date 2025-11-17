@@ -8,4 +8,11 @@ from .save import (
 )
 from .walk import walk_extension_files, walk_images
 from .load import load_csv, load_json, load_yaml, load_torchobj, load_pickle
-from .manager import CacheManager, FolderManager, DualFolderManager, RecordManager
+from .manager import (
+    CacheManager,
+    FolderManager,
+    DualFolderManager,
+    RecordManager,
+    set_record_manager_path,
+    record_manager,
+)
