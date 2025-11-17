@@ -305,7 +305,7 @@ class RecordManager:
             basename,
         )
 
-    def get_dict_value(self, data: Dict, key: str):
+    def get_dict_value(self, data: Dict, key: str, anchor_values=None):
 
         if key in self.cache_info:
             return True, self.non_serializable_load_fn(self.cache_info[key])
@@ -319,9 +319,22 @@ class RecordManager:
         last_key = keys[-1]
         if last_key not in data:
             return False, None
-        return True, data[keys[-1]]
+        # return True, data[keys[-1]]
 
-    def set_dict_value(self, data: Dict, key: str, value):
+        result = data[keys[-1]]
+        if anchor_values is None:
+            return True, result
+
+        if not isinstance(result, list):
+            raise ValueError(f"Anchor values are not supported for non-list values.")
+
+        for value in result:
+            if value.get("_anchor", None) == anchor_values:
+                return True, value
+
+        return False, None
+
+    def set_dict_value(self, data: Dict, key: str, value, anchor_values=None):
         json_serializable = is_json_serializable(value)
         if not json_serializable:
             folder_values = [self.cache_dir, *key.split(".")]
@@ -340,20 +353,32 @@ class RecordManager:
             if k not in data:
                 data[k] = {}
             data = data[k]
-        data[keys[-1]] = value if json_serializable else f"@{save_path}"
+
+        final_key = keys[-1]
+        if anchor_values is None:
+            data[final_key] = value if json_serializable else f"@{save_path}"
+        else:
+            if final_key not in data:
+                data[final_key] = []
+            data[final_key].append(
+                {
+                    "params": anchor_values,
+                    "result": value if json_serializable else f"@{save_path}",
+                }
+            )
 
     def save(self):
         file = self.file
         self.save_fn(self.data, file)
         self.save_fn(self.cache_info, self.cache_info_file)
 
-    def cache_apply(self, key, func=None):
-        wrapper = self.__call__(key)
+    def cache_apply(self, key, anchor=None, func=None):
+        wrapper = self.__call__(key=key, anchor=anchor)
         if func is None:
             return wrapper
         return wrapper(func)
 
-    def __call__(self, key):
+    def __call__(self, key, anchor: None | str | List[str] = None):
 
         if not self._is_init:
             self._delay_init()
@@ -362,24 +387,41 @@ class RecordManager:
             @wraps(func)
             def wrapper(*args, **kwargs):
 
-                # init_kwargs = {k: v for k, v in kwargs.items() if not k.startswith("_")}
+                if anchor is None:
+                    anchor_values = None
+                else:
+                    if isinstance(anchor, str):
+                        anchor = [anchor]
 
-                # signature = inspect.signature(func)
-                # parameters = {
-                #     name: p.default
-                #     for i, (name, p) in enumerate(signature.parameters.items())
-                #     if name != "self"
-                # }
-                # for arg, name in zip(args, parameters.keys()):
-                #     parameters[name] = arg
-                # for k, v in init_kwargs.items():
-                #     parameters[k] = v
+                    init_kwargs = {
+                        k: v for k, v in kwargs.items() if not k.startswith("_")
+                    }
 
-                has_cache, value = self.get_dict_value(self.data, key)
+                    signature = inspect.signature(func)
+                    parameters = {
+                        name: p.default
+                        for i, (name, p) in enumerate(signature.parameters.items())
+                        if name != "self"
+                    }
+                    for arg, name in zip(args, parameters.keys()):
+                        parameters[name] = arg
+                    for k, v in init_kwargs.items():
+                        parameters[k] = v
+
+                    anchor_values = {k: parameters.get(k, None) for k in anchor}
+
+                    if not is_json_serializable(anchor_values):
+                        raise ValueError("anchor values must be json serializable, ")
+
+                has_cache, value = self.get_dict_value(
+                    self.data, key, anchor_values=anchor_values
+                )
                 if has_cache:
                     return value
                 return_value = func(*args, **kwargs)
-                self.set_dict_value(self.data, key, return_value)
+                self.set_dict_value(
+                    self.data, key, return_value, anchor_values=anchor_values
+                )
                 self.save()
                 return return_value
 
