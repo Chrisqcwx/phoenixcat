@@ -24,8 +24,8 @@ init_logger(os.path.join(save_dir, "record.log"))
 logger = logging.getLogger(__name__)
 
 
-record_manager_path = os.path.join(save_dir, "record.json")
-set_record_manager_path(record_manager_path)
+record_manager_path = os.path.join(save_dir, "record.yaml")
+set_record_manager_path(record_manager_path, file_format="yaml")
 
 
 @record_manager("global.func", anchor=["a", "d"])
