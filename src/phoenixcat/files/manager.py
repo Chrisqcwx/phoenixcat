@@ -375,16 +375,26 @@ class RecordManager:
         self.save_fn(self.data, file)
         self.save_fn(self.cache_info, self.cache_info_file)
 
-    def cache_apply(self, key, anchor=None, func=None):
-        wrapper = self.__call__(key=key, anchor=anchor)
+    def cache_apply(self, key, anchor=None, key_anchor=None, func=None):
+        wrapper = self.__call__(key=key, anchor=anchor, key_anchor=key_anchor)
         if func is None:
             return wrapper
         return wrapper(func)
 
-    def __call__(self, key, anchor: None | str | List[str] = None):
+    def __call__(
+        self,
+        key,
+        anchor: None | str | List[str] = None,
+        key_anchor: None | str | List[str] = None,
+    ):
 
         if not self._is_init:
             self._delay_init()
+
+        if key_anchor is None:
+            key_anchor = []
+        elif isinstance(key_anchor, str):
+            key_anchor = [key_anchor]
 
         def _inner_func(func):
             @wraps(func)
@@ -413,6 +423,11 @@ class RecordManager:
                     parameters.pop("self", None)
 
                     anchor_values = {k: parameters.get(k, None) for k in anchor}
+                    key_anchor_values = [
+                        str(parameters.get(k, "_default")) for k in key_anchor
+                    ]
+
+                    _key = '.'.join([key] + key_anchor_values)
 
                     if not is_json_serializable(anchor_values):
                         print(args)
@@ -421,13 +436,13 @@ class RecordManager:
                         raise ValueError("anchor values must be json serializable, ")
 
                 has_cache, value = self.get_dict_value(
-                    self.data, key, anchor_values=anchor_values
+                    self.data, _key, anchor_values=anchor_values
                 )
                 if has_cache:
                     return value
                 return_value = func(*args, **kwargs)
                 self.set_dict_value(
-                    self.data, key, return_value, anchor_values=anchor_values
+                    self.data, _key, return_value, anchor_values=anchor_values
                 )
                 self.save()
                 return return_value
@@ -449,3 +464,4 @@ def set_record_manager_path(
     record_manager.file = file
     record_manager.file_format = file_format
     record_manager.non_serializable_format = non_serializable_format
+    record_manager._is_init = False

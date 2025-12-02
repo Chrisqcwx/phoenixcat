@@ -28,7 +28,7 @@ record_manager_path = os.path.join(save_dir, "record.yaml")
 set_record_manager_path(record_manager_path, file_format="yaml")
 
 
-@record_manager("global.func", anchor=["a", "d"])
+@record_manager("global.func", anchor=["a", "d"], key_anchor="c")
 def global_func(a, b=1, c=2, *, d=3, e=4):
     global logger
     logger.info("execute global_func")
