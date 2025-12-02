@@ -6,7 +6,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="phoenixcat",
-    version="0.5.2",
+    version="0.5.3",
     author="Hongyao Yu, Sijin Yu",
     author_email="chrisqcwx@gmail.com, eeyusijin@mail.scut.edu.cn",
     description="An enhanced infrastructure library for PyTorch.",
