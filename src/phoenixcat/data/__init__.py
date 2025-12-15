@@ -1,2 +1,2 @@
 from .accumulator import ListAccumulator, DictAccumulator
-from .counter import IntervalCounter
+from .counter import IntervalCounter, RecentKCommon
