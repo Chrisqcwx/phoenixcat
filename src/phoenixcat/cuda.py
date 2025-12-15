@@ -1,4 +1,6 @@
+import os
 import time
+import argparse
 import logging
 import subprocess
 from pynvml import *  # 或 from nvml import *
@@ -7,47 +9,6 @@ from contextlib import contextmanager
 from .data import RecentKCommon
 
 logger = logging.getLogger(__name__)
-
-# 定义全局标志
-# _nvml_initialized = False
-
-
-# @contextmanager
-# def nvml_context():
-#     """
-#     NVML 上下文管理器，确保 Init 和 Shutdown 成对执行。
-#     """
-#     global _nvml_initialized
-
-#     if _nvml_initialized:
-#         # 如果已经初始化，直接 yield，不重复执行 nvmlInit
-#         print("NVML 库已被初始化，进入上下文。")
-#         yield
-#         return
-
-#     print("正在初始化 NVML 库...")
-#     try:
-#         # 初始化
-#         nvmlInit()
-#         _nvml_initialized = True
-#         print("NVML 库初始化成功。")
-
-#         # 允许程序块运行
-#         yield
-
-#     except NVMLError as e:
-#         print(f"NVML 初始化失败: {e}")
-#         raise  # 初始化失败，退出上下文
-
-#     finally:
-#         # 清理操作（无论 try 块是否成功都会执行）
-#         if _nvml_initialized:
-#             try:
-#                 nvmlShutdown()
-#                 _nvml_initialized = False  # 重置标志
-#                 print("NVML 库已关闭。")
-#             except NVMLError as e:
-#                 print(f"NVML 关闭失败: {e}")
 
 
 def used_mem_gb(gpu_id):
@@ -120,3 +81,60 @@ def wait_gpu_run(
                 print("")
 
             time.sleep(check_interval)
+
+
+def _wait_gpu_run_handler(args):
+    wait_gpu_run(
+        args.cmd,
+        args.gpu_use_num,
+        args.gpu_ids,
+        args.threshold_gb,
+        args.check_interval,
+        args.confirm_times,
+    )
+
+
+def _wait_gpu_run_register(parser: argparse._SubParsersAction):
+    parser_wgr = parser.add_parser("launch", help="wait gpu run")
+    parser_wgr.add_argument(
+        "cmd",
+        type=str,
+        nargs="+",
+        help="command to run",
+    )
+    parser_wgr.add_argument(
+        "--gpu-use-num",
+        '-k',
+        type=int,
+        default=1,
+        help="number of gpu to use",
+    )
+    parser_wgr.add_argument(
+        "--gpu-ids",
+        "-g",
+        type=str,
+        default="0-7",
+        help="gpu ids to use",
+    )
+    parser_wgr.add_argument(
+        "--threshold-gb",
+        "-s",
+        type=float,
+        default=5,
+        help="threshold of gpu memory usage",
+    )
+    parser_wgr.add_argument(
+        "--check-interval",
+        "-i",
+        type=float,
+        default=5,
+        help="interval of checking gpu memory usage",
+    )
+    parser_wgr.add_argument(
+        "--confirm-times",
+        "-t",
+        type=int,
+        default=3,
+        help="number of confirm times",
+    )
+    parser_wgr.set_defaults(func=_wait_gpu_run_handler)

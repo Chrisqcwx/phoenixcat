@@ -6,7 +6,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="phoenixcat",
-    version="0.5.4",
+    version="0.6.0",
     author="Hongyao Yu, Sijin Yu",
     author_email="chrisqcwx@gmail.com, eeyusijin@mail.scut.edu.cn",
     description="An enhanced infrastructure library for PyTorch.",
@@ -28,4 +28,5 @@ setup(
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
         "Topic :: Utilities",
     ],
+    entry_points={"console_scripts": ["phoenixcat=phoenixcat.cli:main"]},
 )
